@@ -86,7 +86,7 @@
         <!-- Lobby Screen -->
         <div id="lobby-screen" class="hidden text-center">
             <h2 class="text-3xl font-bold mb-2">ห้อง: <span id="room-code-display" class="text-indigo-400 font-mono"></span></h2>
-            <p class="text-gray-400 mb-6">กำลังรอผู้เล่น... (ต้องมีอย่างน้อย 3 คน)</p>
+            <p class="text-gray-400 mb-6">กำลังรอผู้เล่น... (ปกติอย่างน้อย 3 คน)</p>
             <div class="bg-gray-800 p-6 rounded-xl shadow-lg min-h-[200px]">
                 <h3 class="text-xl font-semibold mb-4 text-left">รายชื่อผู้เล่น</h3>
                 <ul id="player-list" class="space-y-2 text-left">
@@ -278,8 +278,19 @@
             if (socket.id === hostId) {
                 isHost = true;
                 startGameBtn.classList.remove('hidden');
-                startGameBtn.disabled = players.length < 3;
-                startGameBtn.textContent = players.length < 3 ? `ต้องการผู้เล่นอีก ${3 - players.length} คน` : 'เริ่มเกม';
+                
+                // --- FOR TESTING: Allow starting with 1 player ---
+                const minPlayers = 1;
+                startGameBtn.disabled = players.length < minPlayers;
+                if (players.length < 3) { // Show test mode text if not enough players for a real game
+                    startGameBtn.textContent = players.length < minPlayers 
+                        ? `(ทดสอบ) ต้องการผู้เล่น ${minPlayers} คน` 
+                        : 'เริ่มเกม (โหมดทดสอบ)';
+                } else {
+                    startGameBtn.textContent = 'เริ่มเกม';
+                }
+                // --- END TESTING CHANGE ---
+
             } else {
                 isHost = false;
                 startGameBtn.classList.add('hidden');

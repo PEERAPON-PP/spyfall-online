@@ -42,6 +42,10 @@
             background-color: #4338ca;
             border-color: #3730a3;
         }
+        .btn-primary:disabled {
+            background-color: #a5b4fc;
+            cursor: not-allowed;
+        }
         .btn-secondary {
             color: #fff;
             background-color: #6b7280;
@@ -115,13 +119,27 @@
                 <!-- Player list will be generated here -->
             </div>
             <div id="game-settings" class="hidden">
-                 <label for="timer-select" class="block text-sm font-medium text-gray-700 mb-2">ตั้งเวลา:</label>
-                 <select id="timer-select" class="input-field w-full mb-4">
-                    <option value="480">8 นาที (แนะนำ)</option>
-                    <option value="420">7 นาที</option>
-                    <option value="360">6 นาที</option>
-                    <option value="300">5 นาที</option>
-                 </select>
+                 <h3 class="text-lg font-semibold mb-3 border-t pt-4">ตั้งค่าเกม</h3>
+                 <div class="grid grid-cols-2 gap-4 mb-4">
+                    <div>
+                        <label for="timer-select" class="block text-sm font-medium text-gray-700 mb-2">เวลาในการเล่น:</label>
+                        <select id="timer-select" class="input-field w-full">
+                           <option value="480">8 นาที</option>
+                           <option value="420">7 นาที</option>
+                           <option value="360">6 นาที</option>
+                           <option value="300">5 นาที (เร็ว)</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label for="rounds-select" class="block text-sm font-medium text-gray-700 mb-2">จำนวนรอบ:</label>
+                        <select id="rounds-select" class="input-field w-full">
+                           <option value="1">1 รอบ</option>
+                           <option value="3">3 รอบ</option>
+                           <option value="5">5 รอบ (แนะนำ)</option>
+                           <option value="7">7 รอบ</option>
+                        </select>
+                    </div>
+                 </div>
             </div>
             <button id="start-game-btn" class="btn btn-primary w-full hidden">เริ่มเกม</button>
             <p id="start-game-error" class="text-center text-red-500 mt-2 text-sm"></p>
@@ -133,6 +151,7 @@
                 <h2 class="text-3xl font-bold text-indigo-600">Spyfall</h2>
                 <div id="timer" class="text-2xl font-mono bg-gray-200 px-3 py-1 rounded-md">08:00</div>
             </div>
+            <div class="text-sm text-gray-500 mb-2">รอบที่ <span id="current-round">1</span> จาก <span id="total-rounds">5</span></div>
             <div id="game-content" class="text-center p-6 bg-gray-50 rounded-lg my-4 min-h-[150px] flex flex-col justify-center items-center">
                 <p class="text-lg mb-2">สถานที่:</p>
                 <h3 id="location-display" class="text-2xl font-bold">???</h3>
@@ -158,12 +177,14 @@
         <!-- End Game Modal -->
          <div id="end-game-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4">
             <div class="card text-center w-full max-w-md">
-                <h3 class="text-2xl font-bold mb-4">เฉลย</h3>
+                <h3 id="end-modal-title" class="text-2xl font-bold mb-4">จบรอบ</h3>
                 <p class="text-lg mb-2">สถานที่คือ:</p>
                 <p id="end-location" class="text-xl font-semibold text-indigo-600 mb-4"></p>
                 <p class="text-lg mb-2">สายลับคือ:</p>
-                <p id="end-spy" class="text-xl font-semibold text-red-500 mb-6"></p>
-                <button id="play-again-btn" class="btn btn-primary w-full">เล่นอีกครั้ง</button>
+                <p id="end-spy" class="text-xl font-semibold text-red-500 mb-4"></p>
+                <p id="round-result-text" class="text-gray-700 my-4 whitespace-pre-wrap"></p>
+                <button id="next-round-btn" class="btn btn-primary w-full hidden">เริ่มรอบต่อไป</button>
+                <button id="back-to-lobby-btn" class="btn btn-secondary w-full hidden">กลับไปที่ล็อบบี้</button>
             </div>
         </div>
 
@@ -193,6 +214,7 @@
         const startGameError = document.getElementById('start-game-error');
         const gameSettings = document.getElementById('game-settings');
         const timerSelect = document.getElementById('timer-select');
+        const roundsSelect = document.getElementById('rounds-select');
 
         // Game elements
         const timerDisplay = document.getElementById('timer');
@@ -200,17 +222,21 @@
         const roleDisplay = document.getElementById('role-display');
         const spyActions = document.getElementById('spy-actions');
         const showLocationsBtn = document.getElementById('show-locations-btn');
+        const currentRoundSpan = document.getElementById('current-round');
+        const totalRoundsSpan = document.getElementById('total-rounds');
 
         // Modals
         const locationsModal = document.getElementById('locations-modal');
         const locationsList = document.getElementById('locations-list');
         const closeLocationsBtn = document.getElementById('close-locations-btn');
         const endGameModal = document.getElementById('end-game-modal');
+        const endModalTitle = document.getElementById('end-modal-title');
         const endLocation = document.getElementById('end-location');
         const endSpy = document.getElementById('end-spy');
-        const playAgainBtn = document.getElementById('play-again-btn');
+        const roundResultText = document.getElementById('round-result-text');
+        const nextRoundBtn = document.getElementById('next-round-btn');
+        const backToLobbyBtn = document.getElementById('back-to-lobby-btn');
 
-        let countdown;
         let isHost = false;
         
         // --- Event Listeners ---
@@ -247,18 +273,23 @@
         });
 
         startGameBtn.addEventListener('click', () => {
-            const selectedTime = timerSelect.value;
-            socket.emit('startGame', { time: selectedTime });
+            const time = timerSelect.value;
+            const rounds = roundsSelect.value;
+            socket.emit('startGame', { time, rounds });
         });
         
+        nextRoundBtn.addEventListener('click', () => {
+            socket.emit('requestNextRound');
+            endGameModal.classList.add('hidden');
+        });
+
+        backToLobbyBtn.addEventListener('click', () => {
+            socket.emit('resetGame');
+        });
+
         showLocationsBtn.addEventListener('click', () => locationsModal.classList.remove('hidden'));
         closeLocationsBtn.addEventListener('click', () => locationsModal.classList.add('hidden'));
 
-        playAgainBtn.addEventListener('click', () => {
-            endGameModal.classList.add('hidden');
-            gameScreen.classList.add('hidden');
-            lobbyScreen.classList.remove('hidden');
-        });
 
         // --- Socket.IO Handlers ---
 
@@ -277,24 +308,35 @@
         });
 
         socket.on('updatePlayerList', (data) => {
-            const players = Array.isArray(data) ? data : data.players;
-            if (!players) {
-                console.error("Invalid player list data received", data);
-                return;
-            }
-
+            const players = Array.isArray(data) ? data : (data.players || []);
+            
             playerList.innerHTML = '';
-            players.forEach((player, index) => {
+            players.sort((a, b) => (b.score || 0) - (a.score || 0)).forEach(player => {
                 const playerDiv = document.createElement('div');
                 playerDiv.className = 'flex items-center bg-gray-100 p-2 rounded';
                 
-                const crown = player.isHost ? '👑' : '';
-                playerDiv.innerHTML = `<span class="font-semibold">${crown} ${player.name}</span>`;
+                const crown = player.isHost ? '👑 ' : '';
+                const scoreText = player.score !== undefined ? `(${player.score} คะแนน)` : '';
+
+                const nameSpan = document.createElement('span');
+                nameSpan.className = 'font-semibold';
+                nameSpan.textContent = `${crown}${player.name}`;
+                
+                const scoreSpan = document.createElement('span');
+                scoreSpan.className = 'text-gray-600';
+                scoreSpan.textContent = scoreText;
+
+                const spacer = document.createElement('div');
+                spacer.className = 'flex-grow';
+
+                playerDiv.appendChild(nameSpan);
+                playerDiv.appendChild(spacer);
+                playerDiv.appendChild(scoreSpan);
 
                 if (isHost && player.id !== socket.id) {
                      const kickButton = document.createElement('button');
                      kickButton.textContent = 'เตะ';
-                     kickButton.className = 'ml-auto text-xs bg-red-500 text-white px-2 py-1 rounded hover:bg-red-600';
+                     kickButton.className = 'ml-4 text-xs bg-red-500 text-white px-2 py-1 rounded hover:bg-red-600';
                      kickButton.onclick = () => {
                          socket.emit('kickPlayer', player.id);
                      };
@@ -304,22 +346,22 @@
                 playerList.appendChild(playerDiv);
             });
             
-            // Show start button if host and enough players
             if (isHost) {
                 gameSettings.classList.remove('hidden');
                 startGameBtn.classList.remove('hidden');
-                if (players.length >= 3) {
-                    startGameBtn.disabled = false;
-                    startGameError.textContent = '';
-                } else {
-                    startGameBtn.disabled = true;
-                    startGameError.textContent = 'ต้องมีผู้เล่นอย่างน้อย 3 คน';
-                }
+                const canStart = players.length >= 1; // For testing, change to 3 for production
+                startGameBtn.disabled = !canStart;
+                startGameError.textContent = canStart ? '' : 'ต้องมีผู้เล่นอย่างน้อย 3 คน';
             }
         });
 
-        socket.on('gameStarted', ({ location, role }) => {
+        socket.on('gameStarted', ({ location, role, round, totalRounds }) => {
             showScreen('game');
+            endGameModal.classList.add('hidden');
+            
+            currentRoundSpan.textContent = round;
+            totalRoundsSpan.textContent = totalRounds;
+
             locationDisplay.textContent = location;
             roleDisplay.textContent = role;
             if (role === 'สายลับ') {
@@ -327,7 +369,6 @@
             } else {
                 spyActions.classList.add('hidden');
             }
-            endGameModal.classList.add('hidden');
         });
 
         socket.on('allLocations', (allLocations) => {
@@ -346,10 +387,32 @@
             timerDisplay.textContent = `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
         });
         
-        socket.on('gameOver', ({ location, spyName }) => {
+        socket.on('gameOver', ({ location, spyName, resultText, isFinalRound, players }) => {
             endGameModal.classList.remove('hidden');
             endLocation.textContent = location;
             endSpy.textContent = spyName;
+            
+            let resultMessage = resultText;
+            
+            if (isFinalRound) {
+                endModalTitle.textContent = "จบเกม!";
+                const winner = players.reduce((prev, current) => ((prev.score || 0) > (current.score || 0)) ? prev : current);
+                resultMessage += `\n\n🏆 ผู้ชนะคือ ${winner.name} ด้วยคะแนน ${winner.score} คะแนน!`;
+                nextRoundBtn.classList.add('hidden');
+                if (isHost) {
+                    backToLobbyBtn.classList.remove('hidden');
+                }
+            } else {
+                endModalTitle.textContent = "จบรอบ";
+                nextRoundBtn.classList.toggle('hidden', !isHost);
+                backToLobbyBtn.classList.add('hidden');
+            }
+            roundResultText.textContent = resultMessage;
+        });
+
+        socket.on('returnToLobby', () => {
+            showScreen('lobby');
+            endGameModal.classList.add('hidden');
         });
 
         socket.on('kicked', () => {

@@ -32,21 +32,21 @@
         <div id="home-screen">
             <h1 class="text-4xl font-bold text-center mb-6 text-indigo-600">Spyfall</h1>
            <div class="space-y-6">
-      <div class="card">
-    <h2 class="text-xl font-semibold text-gray-700 mb-3">ตั้งชื่อ</h2>
-    <input type="text" id="player-name-input" placeholder="ใส่ชื่อผู้เล่น..." class="input-field">
-    <p id="name-error" class="text-red-500 text-sm mt-2 hidden">กรุณาตั้งชื่อก่อนเข้าร่วมห้อง</p>
-  </div>
-  <div class="card">
-    <h2 class="text-xl font-semibold text-gray-700 mb-3">สร้างห้อง</h2>
-    <button id="create-room-btn" class="btn btn-primary w-full">สร้างห้อง</button>
-  </div>
-  <div class="card">
-    <h2 class="text-xl font-semibold text-gray-700 mb-3">เข้าร่วมโดยใช้โค้ด</h2>
-    <input type="text" id="room-code-input" placeholder="ใส่รหัสห้อง..." class="input-field mb-3 uppercase" maxlength="4">
-    <button id="join-room-btn" class="btn btn-secondary w-full">เข้าร่วมห้อง</button>
-  </div>
-</div>
+              <div class="card">
+                <h2 class="text-xl font-semibold text-gray-700 mb-3">ตั้งชื่อ</h2>
+                <input type="text" id="player-name-input" placeholder="ใส่ชื่อผู้เล่น..." class="input-field">
+                <p id="name-error" class="text-red-500 text-sm mt-2 hidden">กรุณาตั้งชื่อก่อนเข้าร่วมห้อง</p>
+              </div>
+              <div class="card">
+                <h2 class="text-xl font-semibold text-gray-700 mb-3">สร้างห้อง</h2>
+                <button id="create-room-btn" class="btn btn-primary w-full">สร้างห้อง</button>
+              </div>
+              <div class="card">
+                <h2 class="text-xl font-semibold text-gray-700 mb-3">เข้าร่วมโดยใช้โค้ด</h2>
+                <input type="text" id="room-code-input" placeholder="ใส่รหัสห้อง..." class="input-field mb-3 uppercase" maxlength="4">
+                <button id="join-room-btn" class="btn btn-secondary w-full">เข้าร่วมห้อง</button>
+              </div>
+            </div>
             <div id="rejoin-prompt" class="hidden card mt-4 bg-indigo-100 text-center"><p class="mb-2">ดูเหมือนคุณจะหลุดจากเกมที่กำลังเล่นอยู่</p><button id="rejoin-btn" class="btn btn-primary">กลับเข้าห้อง</button></div>
         </div>
 
@@ -124,45 +124,45 @@
             });
         }
         function generateToken() { return ([1e7]+-1e3+-4e3+-8e3+-1e11).replace(/[018]/g, c => (c ^ crypto.getRandomValues(new Uint8Array(1))[0] & 15 >> c / 4).toString(16)); }
+        
+        // FIX: Moved submitVote to the global scope so it can be accessed by all listeners
+        function submitVote(playerId) {
+            socket.emit('submitVote', playerId);
+            votePlayerButtons.querySelectorAll('button').forEach(btn => btn.disabled = true);
+            abstainVoteBtn.disabled = true;
+            if (voteTimerInterval) clearInterval(voteTimerInterval);
+        }
 
         // --- Event Listeners ---
-        // --- Event Listeners ---
-// สร้างห้อง
-createRoomBtn.addEventListener('click', () => {
-    const n = playerNameInput.value.trim();
-    if (!n) {
-        // แสดงข้อผิดพลาดถ้าไม่กรอกชื่อ
-        nameError.classList.remove('hidden');
-        return;
-    }
-    // ซ่อนข้อความ error เมื่อชื่อถูกต้องแล้ว
-    nameError.classList.add('hidden');
-    // ถ้า playerToken ยังไม่มี ให้สร้างและบันทึกไว้
-    if (!playerToken) {
-        playerToken = generateToken();
-        localStorage.setItem('playerToken', playerToken);
-    }
-    socket.emit('createRoom', { playerName: n, playerToken });
-});
+        createRoomBtn.addEventListener('click', () => {
+            const n = playerNameInput.value.trim();
+            if (!n) {
+                nameError.classList.remove('hidden');
+                return;
+            }
+            nameError.classList.add('hidden');
+            if (!playerToken) {
+                playerToken = generateToken();
+                localStorage.setItem('playerToken', playerToken);
+            }
+            socket.emit('createRoom', { playerName: n, playerToken });
+        });
 
-// เข้าร่วมโดยใช้รหัสห้อง
-joinRoomBtn.addEventListener('click', () => {
-    const n = playerNameInput.value.trim();
-    const c = roomCodeInput.value.trim().toUpperCase();
-    if (!n) {
-        nameError.classList.remove('hidden');
-        return;
-    }
-    // ซ่อนข้อความ error เมื่อชื่อถูกต้องแล้ว
-    nameError.classList.add('hidden');
-    if (!c) return; // ถ้าไม่กรอกรหัสห้องก็ออกเลย
-    // หากยังไม่มี playerToken ให้สร้างและบันทึกไว้
-    if (!playerToken) {
-        playerToken = generateToken();
-        localStorage.setItem('playerToken', playerToken);
-    }
-    socket.emit('joinRoom', { playerName: n, roomCode: c, playerToken });
-});
+        joinRoomBtn.addEventListener('click', () => {
+            const n = playerNameInput.value.trim();
+            const c = roomCodeInput.value.trim().toUpperCase();
+            if (!n) {
+                nameError.classList.remove('hidden');
+                return;
+            }
+            nameError.classList.add('hidden');
+            if (!c) return;
+            if (!playerToken) {
+                playerToken = generateToken();
+                localStorage.setItem('playerToken', playerToken);
+            }
+            socket.emit('joinRoom', { playerName: n, roomCode: c, playerToken });
+        });
 
         copyCodeBtn.addEventListener('click', () => { navigator.clipboard.writeText(lobbyRoomCode.textContent).then(() => { copyCodeBtn.textContent = 'คัดลอกแล้ว!'; setTimeout(() => copyCodeBtn.textContent = 'คัดลอก', 2000); }); });
         const emitStartGame = () => socket.emit('startGame', { time: timerSelect.value, rounds: roundsSelect.value, theme: themeSelect.value });
@@ -177,7 +177,7 @@ joinRoomBtn.addEventListener('click', () => {
         confirmSpyGuessBtn.addEventListener('click', () => { socket.emit('spyGuessLocation', spyLocationGuess.value); showModal(null); });
         rejoinBtn.addEventListener('click', () => { socket.emit('rejoinGame', localStorage.getItem('playerToken')); rejoinPrompt.classList.add('hidden'); });
 
-        // --- Socket.IO Handlers ---
+        // --- Socket.IO Handlers (FIX: All listeners are now at the top level) ---
         socket.on('connect', () => {
             playerToken = localStorage.getItem('playerToken');
             const lastRoom = localStorage.getItem('lastRoomCode');
@@ -241,33 +241,25 @@ joinRoomBtn.addEventListener('click', () => {
 
         socket.on('timerUpdate', ({ timeLeft, players }) => {
             timerDisplay.textContent = `${String(Math.floor(timeLeft/60)).padStart(2,'0')}:${String(timeLeft%60).padStart(2,'0')}`;
-            if(screens.game.checkVisibility()) updateScoreboard(players, inGameScoreboard);
+            if(screens.game.offsetParent !== null) updateScoreboard(players, inGameScoreboard);
         });
 
         socket.on('startVote', ({ players, reason }) => {
-    showModal('voting');
-    voteReason.textContent = reason;
-    votePlayerButtons.innerHTML = '';
+            showModal('voting');
+            voteReason.textContent = reason;
+            votePlayerButtons.innerHTML = '';
 
-    players.forEach(player => {
-        // แสดงปุ่มโหวตทุกคน ยกเว้นตัวเราเอง
-        if (!socket.playerData || player.id !== socket.playerData.id) {
-            const button = document.createElement('button');
-            button.textContent = player.name;
-            button.className = 'btn btn-primary vote-btn w-full mb-2';
-            button.onclick = () => submitVote(player.id);
-            votePlayerButtons.appendChild(button);
-        }
-    });
-
-    abstainVoteBtn.disabled = false;
-
-        function submitVote(playerId) {
-            socket.emit('submitVote', playerId);
-            votePlayerButtons.querySelectorAll('button').forEach(btn => btn.disabled = true);
-            abstainVoteBtn.disabled = true;
-            clearInterval(voteTimerInterval);
-        }
+            players.forEach(player => {
+                if (!socket.playerData || player.id !== socket.playerData.id) {
+                    const button = document.createElement('button');
+                    button.textContent = player.name;
+                    button.className = 'btn btn-primary vote-btn w-full mb-2';
+                    button.onclick = () => submitVote(player.id);
+                    votePlayerButtons.appendChild(button);
+                }
+            });
+            abstainVoteBtn.disabled = false;
+        });
 
         socket.on('spyGuessPhase', ({ locations, taunt }) => {
             spyLocationGuess.innerHTML = '';
@@ -290,7 +282,7 @@ joinRoomBtn.addEventListener('click', () => {
                 const winner = players.sort((a,b) => b.score - a.score)[0];
                 resultMessage += `\n\n🏆 ผู้ชนะคือ ${winner.name} ด้วยคะแนน ${winner.score} คะแนน!`;
                 nextRoundBtn.classList.add('hidden');
-                if (isHost) backToLobbyBtn.classList.remove('hidden');
+                if (isHost) backToLobbyBtn.classList.remove('hidden'); else backToLobbyBtn.classList.add('hidden');
                 localStorage.removeItem('lastRoomCode');
             } else {
                 endModalTitle.textContent = "จบรอบ";
@@ -298,7 +290,7 @@ joinRoomBtn.addEventListener('click', () => {
                 backToLobbyBtn.classList.add('hidden');
             }
             roundResultText.textContent = resultMessage;
-            updateScoreboard(players, playerList);
+            updateScoreboard(players, playerList); // Update lobby scoreboard as well
         });
 
         socket.on('returnToLobby', () => { showScreen('lobby'); showModal(null); localStorage.removeItem('lastRoomCode'); });

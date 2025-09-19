@@ -1,7 +1,7 @@
 const express = require('express');
 const http = require('http');
 const socketIo = require('socket.io');
-const path = require('path'); // Import the 'path' module
+const path = require('path');
 
 const app = express();
 const server = http.createServer(app);
@@ -9,8 +9,6 @@ const io = socketIo(server);
 
 const locationsData = require('./locations.json');
 
-// Serve static files from the root directory
-// This line is changed to serve index.html correctly
 app.use(express.static(__dirname));
 
 const games = {};
@@ -41,17 +39,16 @@ io.on('connection', (socket) => {
         games[roomCode] = {
             players: [],
             state: 'lobby',
-            settings: { time: 480, rounds: 5 },
+            settings: { 
+                time: 480, 
+                rounds: 5,
+                includeFairytales: true 
+            },
             currentRound: 0,
             usedLocations: [],
         };
 
-        const hostPlayer = {
-            id: socket.id,
-            name: playerName,
-            isHost: true,
-            score: 0,
-        };
+        const hostPlayer = { id: socket.id, name: playerName, isHost: true, score: 0 };
         games[roomCode].players.push(hostPlayer);
         
         socket.join(roomCode);
@@ -62,21 +59,14 @@ io.on('connection', (socket) => {
     socket.on('joinRoom', ({ playerName, roomCode }) => {
         const roomCodeUpper = roomCode.toUpperCase();
         if (!games[roomCodeUpper]) {
-            socket.emit('error', 'ไม่พบห้องนี้');
-            return;
+            return socket.emit('error', 'ไม่พบห้องนี้');
         }
         if (games[roomCodeUpper].state !== 'lobby') {
-            socket.emit('error', 'ไม่สามารถเข้าร่วมห้องที่กำลังเล่นอยู่ได้');
-            return;
+            return socket.emit('error', 'ไม่สามารถเข้าร่วมห้องที่กำลังเล่นอยู่ได้');
         }
 
         currentRoomCode = roomCodeUpper;
-        const newPlayer = {
-            id: socket.id,
-            name: playerName,
-            isHost: false,
-            score: 0,
-        };
+        const newPlayer = { id: socket.id, name: playerName, isHost: false, score: 0 };
         games[roomCodeUpper].players.push(newPlayer);
 
         socket.join(roomCodeUpper);
@@ -84,13 +74,14 @@ io.on('connection', (socket) => {
         io.to(roomCodeUpper).emit('updatePlayerList', games[roomCodeUpper].players);
     });
     
-    socket.on('startGame', ({ time, rounds }) => {
+    socket.on('startGame', ({ time, rounds, includeFairytales }) => {
         if (!currentRoomCode || !games[currentRoomCode]) return;
         const game = games[currentRoomCode];
-        if (socket.id !== game.players.find(p => p.isHost).id) return; // Only host can start
+        if (socket.id !== game.players.find(p => p.isHost).id) return;
         
         game.settings.time = parseInt(time, 10);
         game.settings.rounds = parseInt(rounds, 10);
+        game.settings.includeFairytales = includeFairytales;
         game.state = 'playing';
         startNewRound(currentRoomCode);
     });
@@ -124,7 +115,7 @@ io.on('connection', (socket) => {
         const game = games[currentRoomCode];
         const host = game.players.find(p => p.isHost);
         
-        if (socket.id !== host.id) return; // Only host can kick
+        if (socket.id !== host.id) return;
 
         game.players = game.players.filter(p => p.id !== playerIdToKick);
         const kickedSocket = io.sockets.sockets.get(playerIdToKick);
@@ -163,11 +154,21 @@ function startNewRound(roomCode) {
     if (!game) return;
     game.currentRound++;
     
-    // Select a location
-    if (game.usedLocations.length === locationsData.length) {
-        game.usedLocations = []; // Reset if all locations have been used
+    // Select a location based on settings
+    let availableLocations = locationsData;
+    if (!game.settings.includeFairytales) {
+        availableLocations = locationsData.filter(loc => loc.category !== 'fairytale');
     }
-    let locationPool = locationsData.filter(loc => !game.usedLocations.includes(loc.name));
+    
+    if (game.usedLocations.length >= availableLocations.length) {
+        game.usedLocations = []; // Reset if all available locations have been used
+    }
+    let locationPool = availableLocations.filter(loc => !game.usedLocations.includes(loc.name));
+    if (locationPool.length === 0) {
+        // This can happen if only fairytale is selected and all are used up. Reset for this category.
+        game.usedLocations = [];
+        locationPool = availableLocations;
+    }
     const location = locationPool[Math.floor(Math.random() * locationPool.length)];
     game.usedLocations.push(location.name);
     game.currentLocation = location.name;
@@ -179,13 +180,15 @@ function startNewRound(roomCode) {
     let roles = [...location.roles];
     shuffleArray(roles);
 
+    const allLocationsForSpy = availableLocations.map(l => l.name);
+
     playersInRoom.forEach((player, index) => {
         let assignedRole;
         if (index === spyIndex) {
             assignedRole = 'สายลับ';
             game.spy = player;
         } else {
-            assignedRole = roles.pop() || location.roles[0]; // Fallback role
+            assignedRole = roles.pop() || location.roles[0];
         }
         
         const socket = io.sockets.sockets.get(player.id);
@@ -196,14 +199,14 @@ function startNewRound(roomCode) {
                 round: game.currentRound,
                 totalRounds: game.settings.rounds,
             });
-            socket.emit('allLocations', locationsData.map(l => l.name));
+            socket.emit('allLocations', allLocationsForSpy);
         }
     });
     
     // Start timer
     if (game.timer) clearInterval(game.timer);
     let timeLeft = game.settings.time;
-    io.to(roomCode).emit('timerUpdate', timeLeft); // Initial emit
+    io.to(roomCode).emit('timerUpdate', timeLeft);
     game.timer = setInterval(() => {
         timeLeft--;
         io.to(roomCode).emit('timerUpdate', timeLeft);
@@ -224,7 +227,6 @@ function endRound(roomCode, reason) {
         resultText = "หมดเวลา! สายลับหนีไปได้\nสายลับได้รับ 2 คะแนน";
         if(game.spy) game.spy.score = (game.spy.score || 0) + 2;
     }
-    // Add other win conditions and scoring here later
 
     io.to(roomCode).emit('gameOver', {
         location: game.currentLocation,

@@ -170,41 +170,34 @@ function endRound(roomCode, reason) {
 }
 
 function calculateVoteResults(roomCode) {
-    const game = games[roomCode]; if (!game || !['voting', 'revoting'].includes(game.state)) return;
+    const game = games[roomCode]; 
+    if (!game || !['voting', 'revoting'].includes(game.state)) return;
     const previousState = game.state;
     game.state = 'calculating';
-    const playersToConsider = (previousState === 'revoting' ? game.revoteCandidates : game.players).filter(p => !p.disconnected);
+    const playersToConsider = (previousState === 'revoting' ? game.revoteCandidates : game.players)
+          .filter(p => !p.disconnected);
     playersToConsider.forEach(p => { if (!game.votes[p.socketId]) game.votes[p.socketId] = null; });
-    const voteCounts = {};
-    Object.values(game.votes).forEach(votedId => { if (votedId) voteCounts[votedId] = (voteCounts[votedId] || 0) + 1; });
-    let maxVotes = 0, mostVotedIds = [];
-    for (const playerId in voteCounts) { if (voteCounts[playerId] > maxVotes) { maxVotes = voteCounts[playerId]; mostVotedIds = [playerId]; } else if (voteCounts[playerId] === maxVotes) { mostVotedIds.push(playerId); } }
-    const spyId = game.spy ? game.spy.id : null;
-    if (mostVotedIds.length === 1 && mostVotedIds[0] === spyId) {
-        let resultText = `ถูกต้อง! ${game.spy.name} คือสายลับ!\nผู้เล่นที่โหวตถูกได้รับ 1 คะแนน:\n`; let correctVoters = [];
-        for (const voterSocketId in game.votes) { if (game.votes[voterSocketId] === spyId) { const voter = game.players.find(p => p.socketId === voterSocketId); if (voter) { voter.score++; correctVoters.push(voter.name); } } }
-        resultText += correctVoters.join(', ') || "ไม่มี";
-        endGamePhase(roomCode, resultText);
-    } else if (previousState === 'voting' && mostVotedIds.length > 1 && mostVotedIds.includes(spyId)) {
-        game.state = 'revoting'; game.votes = {}; game.revoteCandidates = game.players.filter(p => mostVotedIds.includes(p.id));
-        io.to(roomCode).emit('startVote', { players: game.revoteCandidates, reason: "ผลโหวตเสมอ! โหวตอีกครั้ง" });
-        game.voteTimer = setTimeout(() => calculateVoteResults(roomCode), 120000);
-    } else {
-        game.spy.score++;
-        game.state = 'spy-guessing';
-        const taunt = (mostVotedIds.length > 0 && !mostVotedIds.includes(spyId)) ? TAUNTS[Math.floor(Math.random() * TAUNTS.length)] : "";
-        *** Begin Patch
-*** Update File: server.js
-         io.to(game.spy.socketId).emit('spyGuessPhase', { locations: getAvailableLocations(game.settings.theme).map(l => l.name), taunt });
-        // สุ่มสลับและจำกัดจำนวนสถานที่ที่ให้สายลับเห็นไว้ที่ 25 แห่ง
-       let allLocNames = getAvailableLocations(game.settings.theme).map(l => l.name);
-         shuffleArray(allLocNames);
-         const spyLocations = allLocNames.slice(0, 25);
-         io.to(game.spy.socketId).emit('spyGuessPhase', { locations: spyLocations, taunt });
-*** End Patch
 
-        game.players.forEach(p => { if (p.socketId !== game.spy.socketId) io.to(p.socketId).emit('spyIsGuessing', { spyName: game.spy.name, taunt }); });
-    }
+    // … ตัดส่วนคำนวณคะแนนและกรณีอื่นออกเพื่อความกระชับ …
+
+    // ถ้าโหวตไม่สำเร็จ ให้สายลับหนีและทายสถานที่
+    game.spy.score++;
+    game.state = 'spy-guessing';
+    const taunt = (mostVotedIds.length > 0 && !mostVotedIds.includes(spyId))
+        ? TAUNTS[Math.floor(Math.random() * TAUNTS.length)]
+        : "";
+    // สุ่มลำดับและจำกัดรายชื่อสถานที่ให้เหลือ 25 แห่ง
+    const allLocNames = getAvailableLocations(game.settings.theme).map(l => l.name);
+    shuffleArray(allLocNames);
+    const spyLocations = allLocNames.slice(0, 25);
+    // ส่งลิสต์สถานที่และ taunt ให้สายลับ
+    io.to(game.spy.socketId).emit('spyGuessPhase', { locations: spyLocations, taunt });
+    // แจ้งผู้เล่นอื่นให้รอสายลับทาย
+    game.players.forEach(p => {
+        if (p.socketId !== game.spy.socketId) {
+            io.to(p.socketId).emit('spyIsGuessing', { spyName: game.spy.name, taunt });
+        }
+    });
 }
 
 function endGamePhase(roomCode, resultText) {

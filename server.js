@@ -1,227 +1,234 @@
-// --- Server Setup ---
 const express = require('express');
 const http = require('http');
 const socketIo = require('socket.io');
+const locationsData = require('./locations.json'); // Assuming you have a locations.json file
 
 const app = express();
 const server = http.createServer(app);
-const io = socketIo(server, {
-    cors: {
-        origin: "*", // Allow connections from any origin
-        methods: ["GET", "POST"]
-    }
-});
+const io = socketIo(server);
 
-const PORT = process.env.PORT || 3000;
+const games = {};
 
-// Serve the frontend file
-app.get('/', (req, res) => {
-    // Corrected to serve index.html from the root
-    res.sendFile(__dirname + '/index.html');
-});
+app.use(express.static('public')); // Serve your index.html from a 'public' folder
 
-// --- Game Data ---
-const locations = [
-    // Original Locations
-    { name: "ชายหาด", roles: ["นักท่องเที่ยว", "คนขายไอศกรีม", "ไลฟ์การ์ด", "เด็กเล่นทราย", "คนเล่นเซิร์ฟ", "คนทาครีมกันแดด"] },
-    { name: "สถานีอวกาศ", roles: ["นักบินอวกาศ", "นักวิทยาศาสตร์", "หุ่นยนต์ซ่อมบำรุง", "นักท่องเที่ยวอวกาศ", "ผู้ควบคุมภารกิจ", "เอเลี่ยนแฝงตัว"] },
-    { name: "โรงพยาบาล", roles: ["แพทย์", "พยาบาล", "คนไข้", "ศัลยแพทย์", "เภสัชกร", "ญาติผู้ป่วย"] },
-    { name: "โรงเรียน", roles: ["ครู", "นักเรียน", "ภารโรง", "ผอ.โรงเรียน", "บรรณารักษ์", "นักเรียนแลกเปลี่ยน"] },
-    { name: "ร้านอาหารหรู", roles: ["เชฟ", "บริกร", "ลูกค้า", "นักวิจารณ์อาหาร", "ผู้จัดการร้าน", "คนล้างจาน"] },
-    { name: "กองถ่ายภาพยนตร์", roles: ["ผู้กำกับ", "นักแสดง", "ตากล้อง", "คนเขียนบท", "ช่างแต่งหน้า", "ตัวประกอบ"] },
-    { name: "คณะละครสัตว์", roles: ["ตัวตลก", "นักกายกรรม", "ผู้ฝึกสัตว์", "คนขายป๊อปคอร์น", "โฆษก", "ผู้ชมแถวหน้า"] },
-    { name: "สถานีตำรวจ", roles: ["สารวัตร", "สายสืบ", "ผู้ต้องหา", "ตำรวจจราจร", "ทนายความ", "พยาน"] },
-    { name: "คาสิโน", roles: ["เจ้ามือ", "นักพนัน", "พนักงานเสิร์ฟ", "เจ้าของคาสิโน", "รปภ.", "คนนับไพ่"] },
-    { name: "ซูเปอร์มาร์เก็ต", roles: ["แคชเชียร์", "ลูกค้า", "พนักงานจัดของ", "คนชิมอาหารฟรี", "ผู้จัดการสาขา", "พนักงานเข็นรถ"] },
-    { name: "เครื่องบิน", roles: ["นักบิน", "แอร์โฮสเตส", "ผู้โดยสาร", "วิศวกรเครื่องบิน", "ผู้โดยสารชั้นธุรกิจ", "เด็กทารก"] },
-    { name: "เรือดำน้ำ", roles: ["กัปตัน", "วิศวกร", "ต้นหน", "พ่อครัว", "ทหารเรือ", "ผู้เชี่ยวชาญโซนาร์"] },
-    { name: "มหาวิทยาลัย", roles: ["ศาสตราจารย์", "นักศึกษา", "นักวิจัย", "เจ้าหน้าที่หอสมุด", "อธิการบดี", "นักกีฬา"] },
-    { name: "ปาร์ตี้ริมสระ", roles: ["เจ้าของบ้าน", "ดีเจ", "คนเล่นน้ำ", "บาร์เทนเดอร์", "คนทำบาร์บีคิว", "แขกไม่ได้รับเชิญ"] },
-    { name: "ธนาคาร", roles: ["พนักงาน", "ลูกค้า", "ผู้จัดการ", "ยาม", "โจรปล้นธนาคาร", "ที่ปรึกษาการเงิน"] },
-    // New Locations
-    { name: "พิพิธภัณฑ์", roles: ["ภัณฑารักษ์", "ยาม", "นักท่องเที่ยว", "นักเรียนทัศนศึกษา", "นักประวัติศาสตร์", "คนทำความสะอาด"] },
-    { name: "สวนสัตว์", roles: ["ผู้ดูแลสัตว์", "สัตวแพทย์", "คนขายตั๋ว", "ครอบครัวมาเที่ยว", "ช่างภาพสัตว์", "เด็กทำลูกโป่งหาย"] },
-    { name: "ห้องสมุด", roles: ["บรรณารักษ์", "คนอ่านหนังสือ", "นักศึกษา", "คนหาหนังสือ", "เจ้าหน้าที่", "คนแอบหลับ"] },
-    { name: "คอนเสิร์ต", roles: ["นักร้อง", "มือกีตาร์", "แฟนคลับ", "ทีมงาน", "ซาวด์เอนจิเนียร์", "คนขายของที่ระลึก"] },
-    { name: "ฟาร์ม", roles: ["ชาวนา", "คนเลี้ยงวัว", "คนขับรถไถ", "สัตวแพทย์", "คนมาซื้อผลผลิต", "เด็กฝึกงาน"] },
-    { name: "งานแต่งงาน", roles: ["เจ้าบ่าว", "เจ้าสาว", "เพื่อนเจ้าสาว", "นายพิธี", "ช่างภาพ", "แขก"] },
-    { name: "ศาล", roles: ["ผู้พิพากษา", "อัยการ", "ทนาย", "จำเลย", "พยาน", "คณะลูกขุน"] },
-    { name: "อู่ซ่อมรถ", roles: ["ช่างยนต์", "ลูกค้า", "เจ้าของอู่", "พนักงานขายอะไหล่", "เด็กฝึกงาน", "คนล้างรถ"] },
-    { name: "ร้านตัดผม", roles: ["ช่างตัดผม", "ลูกค้า", "คนรอคิว", "คนกวาดพื้น", "เจ้าของร้าน", "เด็กมาตัดผมครั้งแรก"] },
-    { name: "ยอดเขาสูง", roles: ["นักปีนเขา", "ไกด์", "นักวิทยาศาสตร์", "นักท่องเที่ยว", "คนถ่ายสารคดี", "เชอร์ปา"] },
-    { name: "โรงงานช็อกโกแลต", roles: ["คนงาน", "ผู้จัดการ", "นักชิม", "วิศวกร", "เด็กทัศนศึกษา", "เจ้าของโรงงาน"] },
-    { name: "คณะสำรวจขั้วโลก", roles: ["นักวิจัย", "แพทย์", "วิศวกร", "นักสำรวจ", "พ่อครัว", "คนขับรถตักหิมะ"] },
-    { name: "ตลาดน้ำ", roles: ["พ่อค้า", "แม่ค้า", "นักท่องเที่ยว", "คนพายเรือ", "คนทำอาหาร", "คนขายของที่ระลึก"] },
-    { name: "ไซต์ก่อสร้าง", roles: ["วิศวกร", "โฟร์แมน", "กรรมกร", "คนขับเครน", "สถาปนิก", "เจ้าหน้าที่ความปลอดภัย"] },
-    { name: "สถานีดับเพลิง", roles: ["นักดับเพลิง", "หัวหน้าสถานี", "พนักงานรับแจ้งเหตุ", "ช่างซ่อมรถ", "อาสาสมัคร", "แมวประจำสถานี"] },
-    { name: "พระราชฐานชั้นใน", roles: ["พระมเหสี", "นางกำนัล", "หัวหน้าขันที", "พระอาจารย์", "หมอหลวง", "แขกบ้านแขกเมือง"] }
-];
-
-
-// --- Game State Management ---
-let games = {}; // Stores all active game rooms
-
-// --- Helper Functions ---
+// Helper Functions
 function generateRoomCode() {
-    let code = '';
-    const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-    for (let i = 0; i < 4; i++) {
-        code += characters.charAt(Math.floor(Math.random() * characters.length));
-    }
-    // Ensure the code is unique
-    if (games[code]) {
-        return generateRoomCode();
-    }
+    let code;
+    do {
+        code = Math.random().toString(36).substring(2, 6).toUpperCase();
+    } while (games[code]);
     return code;
 }
 
-// --- Socket.IO Connection Logic ---
-io.on('connection', (socket) => {
-    console.log(`User connected: ${socket.id}`);
+function shuffleArray(array) {
+    for (let i = array.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [array[i], array[j]] = [array[j], array[i]];
+    }
+}
 
-    socket.on('createRoom', ({ name, timerMinutes }) => {
+// Main Socket Logic
+io.on('connection', (socket) => {
+    let currentRoomCode = null;
+
+    socket.on('createRoom', ({ playerName }) => {
         const roomCode = generateRoomCode();
+        currentRoomCode = roomCode;
         games[roomCode] = {
-            players: [{ id: socket.id, name: name }],
-            hostId: socket.id,
+            players: [],
             state: 'lobby',
-            timerSetting: parseInt(timerMinutes) * 60,
-            timerInterval: null,
-            spy: null,
-            location: null,
-            roles: {}
+            settings: { time: 480, rounds: 5 },
+            currentRound: 0,
+            usedLocations: [],
         };
+
+        const hostPlayer = {
+            id: socket.id,
+            name: playerName,
+            isHost: true,
+            score: 0,
+        };
+        games[roomCode].players.push(hostPlayer);
+        
         socket.join(roomCode);
         socket.emit('roomCreated', { roomCode });
-        io.to(roomCode).emit('updateLobby', {players: games[roomCode].players, hostId: games[roomCode].hostId});
+        io.to(roomCode).emit('updatePlayerList', games[roomCode].players);
     });
 
-    socket.on('joinRoom', ({ roomCode, name }) => {
-        if (games[roomCode] && games[roomCode].state === 'lobby') {
-            games[roomCode].players.push({ id: socket.id, name: name });
-            socket.join(roomCode);
-            socket.emit('joinSuccess', { roomCode });
-            io.to(roomCode).emit('updateLobby', {players: games[roomCode].players, hostId: games[roomCode].hostId});
-        } else {
-            socket.emit('joinError', 'ไม่พบห้องหรือเกมเริ่มไปแล้ว');
+    socket.on('joinRoom', ({ playerName, roomCode }) => {
+        if (!games[roomCode]) {
+            socket.emit('error', 'ไม่พบห้องนี้');
+            return;
         }
+        if (games[roomCode].state !== 'lobby') {
+            socket.emit('error', 'ไม่สามารถเข้าร่วมห้องที่กำลังเล่นอยู่ได้');
+            return;
+        }
+
+        currentRoomCode = roomCode;
+        const newPlayer = {
+            id: socket.id,
+            name: playerName,
+            isHost: false,
+            score: 0,
+        };
+        games[roomCode].players.push(newPlayer);
+
+        socket.join(roomCode);
+        socket.emit('joinSuccess', { roomCode });
+        io.to(roomCode).emit('updatePlayerList', games[roomCode].players);
     });
-
-    socket.on('startGame', ({ roomCode }) => {
-        const game = games[roomCode];
-        // --- FOR TESTING: Allow starting with 1 player ---
-        if (game && game.hostId === socket.id && game.players.length >= 1) {
-            game.state = 'playing';
-
-            const randomLocationIndex = Math.floor(Math.random() * locations.length);
-            game.location = locations[randomLocationIndex];
-            
-            // In test mode with 1 player, they are never the spy.
-            if (game.players.length > 1) {
-                const randomSpyIndex = Math.floor(Math.random() * game.players.length);
-                game.spy = game.players[randomSpyIndex].id;
-            } else {
-                game.spy = null; // No spy if only 1 player
-            }
-
-
-            const availableRoles = [...game.location.roles];
-            game.players.forEach(player => {
-                if (player.id !== game.spy) {
-                    const roleIndex = Math.floor(Math.random() * availableRoles.length);
-                    game.roles[player.id] = availableRoles.splice(roleIndex, 1)[0];
-                    if (availableRoles.length === 0) availableRoles.push(...game.location.roles);
-                }
-            });
-
-            game.players.forEach(player => {
-                const isSpy = player.id === game.spy;
-                io.to(player.id).emit('gameStarted', {
-                    isSpy: isSpy,
-                    location: isSpy ? null : game.location.name,
-                    role: isSpy ? null : game.roles[player.id],
-                    players: game.players.map(p => p.name),
-                    allLocations: locations.map(l => l.name)
-                });
-            });
-
-            let duration = game.timerSetting;
-            io.to(roomCode).emit('timerUpdate', duration); // Send initial time
-            game.timerInterval = setInterval(() => {
-                duration--;
-                io.to(roomCode).emit('timerUpdate', duration);
-                if (duration <= 0) {
-                    clearInterval(game.timerInterval);
-                    const spyPlayer = game.players.find(p => p.id === game.spy);
-                    io.to(roomCode).emit('gameEnded', { 
-                        spyName: spyPlayer ? spyPlayer.name : "ไม่มี",
-                        locationName: game.location.name,
-                        roles: game.players.map(p => ({
-                            name: p.name,
-                            role: p.id === game.spy ? 'สายลับ' : game.roles[p.id]
-                        }))
-                    });
-                }
-            }, 1000);
+    
+    socket.on('startGame', ({ time, rounds }) => {
+        if (!currentRoomCode || !games[currentRoomCode]) return;
+        const game = games[currentRoomCode];
+        if (socket.id !== game.players.find(p => p.isHost).id) return; // Only host can start
+        
+        game.settings.time = parseInt(time, 10);
+        game.settings.rounds = parseInt(rounds, 10);
+        game.state = 'playing';
+        startNewRound(currentRoomCode);
+    });
+    
+    socket.on('requestNextRound', () => {
+        if (!currentRoomCode || !games[currentRoomCode]) return;
+        const game = games[currentRoomCode];
+        if (socket.id !== game.players.find(p => p.isHost).id) return;
+        
+        if (game.currentRound < game.settings.rounds) {
+            startNewRound(currentRoomCode);
         }
     });
     
-    socket.on('endGame', ({ roomCode }) => {
-        const game = games[roomCode];
-        if (game && game.hostId === socket.id) {
-            clearInterval(game.timerInterval);
-            const spyPlayer = game.players.find(p => p.id === game.spy);
-            io.to(roomCode).emit('gameEnded', { 
-                spyName: spyPlayer ? spyPlayer.name : "ไม่มี",
-                locationName: game.location.name,
-                roles: game.players.map(p => ({
-                    name: p.name,
-                    role: p.id === game.spy ? 'สายลับ' : game.roles[p.id]
-                }))
-            });
-        }
+    socket.on('resetGame', () => {
+         if (!currentRoomCode || !games[currentRoomCode]) return;
+         const game = games[currentRoomCode];
+         if (socket.id !== game.players.find(p => p.isHost).id) return;
+         
+         game.state = 'lobby';
+         game.currentRound = 0;
+         game.usedLocations = [];
+         game.players.forEach(p => p.score = 0);
+         
+         io.to(currentRoomCode).emit('returnToLobby');
+         io.to(currentRoomCode).emit('updatePlayerList', game.players);
     });
 
-    socket.on('playAgain', ({ roomCode }) => {
-        const game = games[roomCode];
-        if (game && game.hostId === socket.id) {
-            game.state = 'lobby';
-            game.spy = null;
-            game.location = null;
-            game.roles = {};
-            clearInterval(game.timerInterval);
-            
-            io.to(roomCode).emit('returnToLobby');
-            io.to(roomCode).emit('updateLobby', {players: game.players, hostId: game.hostId});
+    socket.on('kickPlayer', (playerIdToKick) => {
+        if (!currentRoomCode || !games[currentRoomCode]) return;
+        const game = games[currentRoomCode];
+        const host = game.players.find(p => p.isHost);
+        
+        if (socket.id !== host.id) return; // Only host can kick
+
+        game.players = game.players.filter(p => p.id !== playerIdToKick);
+        const kickedSocket = io.sockets.sockets.get(playerIdToKick);
+        if (kickedSocket) {
+            kickedSocket.leave(currentRoomCode);
+            kickedSocket.emit('kicked');
         }
+        io.to(currentRoomCode).emit('updatePlayerList', game.players);
     });
 
     socket.on('disconnect', () => {
-        console.log(`User disconnected: ${socket.id}`);
-        for (const roomCode in games) {
-            const game = games[roomCode];
-            const playerIndex = game.players.findIndex(p => p.id === socket.id);
-            if (playerIndex > -1) {
-                game.players.splice(playerIndex, 1);
-                
-                if (game.players.length === 0) {
-                    clearInterval(game.timerInterval);
-                    delete games[roomCode];
-                    console.log(`Room ${roomCode} deleted.`);
-                } else {
-                    if (game.hostId === socket.id) {
-                        game.hostId = game.players[0].id;
-                        console.log(`New host for room ${roomCode} is ${game.hostId}`);
-                    }
-                    io.to(roomCode).emit('updateLobby', {players: game.players, hostId: game.hostId});
-                }
-                break;
-            }
+        if (!currentRoomCode || !games[currentRoomCode]) return;
+        
+        const game = games[currentRoomCode];
+        const playerIndex = game.players.findIndex(p => p.id === socket.id);
+        if (playerIndex === -1) return;
+
+        const wasHost = game.players[playerIndex].isHost;
+        game.players.splice(playerIndex, 1);
+
+        if (game.players.length === 0) {
+            delete games[currentRoomCode];
+            return;
         }
+
+        if (wasHost) {
+            game.players[0].isHost = true;
+        }
+        
+        io.to(currentRoomCode).emit('updatePlayerList', game.players);
     });
 });
 
-server.listen(PORT, () => {
-    console.log(`Server running on http://localhost:${PORT}`);
+function startNewRound(roomCode) {
+    const game = games[roomCode];
+    game.currentRound++;
+    
+    // Select a location
+    if (game.usedLocations.length === locationsData.length) {
+        game.usedLocations = []; // Reset if all locations have been used
+    }
+    let locationPool = locationsData.filter(loc => !game.usedLocations.includes(loc.name));
+    const location = locationPool[Math.floor(Math.random() * locationPool.length)];
+    game.usedLocations.push(location.name);
+    
+    // Assign roles
+    const playersInRoom = game.players;
+    shuffleArray(playersInRoom);
+    const spyIndex = Math.floor(Math.random() * playersInRoom.length);
+    let roles = [...location.roles];
+    shuffleArray(roles);
+
+    playersInRoom.forEach((player, index) => {
+        let assignedRole;
+        if (index === spyIndex) {
+            assignedRole = 'สายลับ';
+            game.spy = player;
+        } else {
+            assignedRole = roles.pop() || location.roles[0]; // Fallback role
+        }
+        
+        const socket = io.sockets.sockets.get(player.id);
+        if (socket) {
+            socket.emit('gameStarted', {
+                location: assignedRole === 'สายลับ' ? 'ไม่ทราบ' : location.name,
+                role: assignedRole,
+                round: game.currentRound,
+                totalRounds: game.settings.rounds,
+            });
+            socket.emit('allLocations', locationsData.map(l => l.name));
+        }
+    });
+    
+    // Start timer
+    if (game.timer) clearInterval(game.timer);
+    let timeLeft = game.settings.time;
+    game.timer = setInterval(() => {
+        timeLeft--;
+        io.to(roomCode).emit('timerUpdate', timeLeft);
+        if (timeLeft <= 0) {
+            endRound(roomCode, "spy_escaped");
+        }
+    }, 1000);
+}
+
+function endRound(roomCode, reason) {
+    const game = games[roomCode];
+    if (game.state !== 'playing') return;
+    clearInterval(game.timer);
+    game.state = 'lobby';
+
+    let resultText = "";
+    if (reason === "spy_escaped") {
+        resultText = "หมดเวลา! สายลับหนีไปได้\nสายลับได้รับ 2 คะแนน";
+        game.spy.score += 2;
+    }
+    // Add other win conditions and scoring here later
+
+    io.to(roomCode).emit('gameOver', {
+        location: game.usedLocations[game.usedLocations.length - 1],
+        spyName: game.spy.name,
+        resultText: resultText,
+        isFinalRound: game.currentRound >= game.settings.rounds,
+        players: game.players
+    });
+    io.to(roomCode).emit('updatePlayerList', game.players);
+}
+
+server.listen(3000, () => {
+    console.log('Server is running on port 3000');
 });
 

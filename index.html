@@ -127,12 +127,17 @@
         function updateScoreboard(players, container, allPlayerRoles = null) {
             container.innerHTML = '';
             const sortedPlayers = [...players].sort((a, b) => b.score - a.score);
-            
+
             sortedPlayers.forEach(player => {
                 const playerDiv = document.createElement('div');
                 playerDiv.className = 'flex justify-between items-center bg-gray-100 p-2 rounded';
                 if (player.disconnected) playerDiv.classList.add('player-disconnected');
-                
+
+                // --- Left Side (Name, Status, Role) ---
+                const leftDiv = document.createElement('div');
+                leftDiv.className = 'flex-grow flex items-center space-x-2';
+
+                const nameSpan = document.createElement('span');
                 const crown = player.isHost ? '👑 ' : '';
                 let statusText = '';
                 if (player.isSpectator) {
@@ -141,32 +146,47 @@
                     const self = players.find(p => p.token === playerToken);
                     if(self && self.isSpectator && player.id === self.id) statusText = ' (รอเล่นรอบถัดไป)';
                 }
+                nameSpan.innerHTML = `${crown}${player.name}<span class="text-gray-500">${statusText}</span>`;
+                leftDiv.appendChild(nameSpan);
 
-                const roleInfo = allPlayerRoles ? ` - <span class="font-semibold text-indigo-600">${allPlayerRoles.find(r => r.id === player.id)?.role || ''}</span>` : '';
+                if (allPlayerRoles) {
+                    const roleSpan = document.createElement('span');
+                    roleSpan.className = 'text-sm';
+                    roleSpan.innerHTML = `- <span class="font-semibold text-indigo-600">${allPlayerRoles.find(r => r.id === player.id)?.role || ''}</span>`;
+                    leftDiv.appendChild(roleSpan);
+                }
+
+                // --- Right Side (Score, Buttons) ---
+                const rightDiv = document.createElement('div');
+                rightDiv.className = 'flex items-center space-x-2';
+
+                const scoreSpan = document.createElement('span');
+                scoreSpan.className = 'font-semibold';
+                scoreSpan.textContent = `${player.score} คะแนน`;
+                rightDiv.appendChild(scoreSpan);
                 
-                playerDiv.innerHTML = `
-                    <div class="flex-grow">
-                        <span>${crown}${player.name}<span class="text-gray-500">${statusText}</span></span>
-                        <span class="text-sm">${roleInfo}</span>
-                    </div>
-                    <span class="font-semibold">${player.score} คะแนน</span>`;
-                
-                if (container === playerList) { // Lobby specific buttons
+                // Lobby specific buttons
+                if (container === playerList) {
+                    // Toggle Spectator Button
                     if (socket.playerData && player.id === socket.playerData.id && !player.isHost) {
                         const toggleBtn = document.createElement('button');
                         toggleBtn.textContent = player.isSpectator ? 'สลับเป็นผู้เล่น' : 'สลับเป็นผู้ชม';
-                        toggleBtn.className = 'ml-2 btn btn-secondary btn-sm';
+                        toggleBtn.className = 'btn btn-secondary btn-sm';
                         toggleBtn.onclick = () => socket.emit('toggleSpectatorMode');
-                        playerDiv.querySelector('.flex-grow').appendChild(toggleBtn);
+                        rightDiv.appendChild(toggleBtn);
                     }
-                    if (isHost && player.id !== (socket.playerData ? socket.playerData.id : null)) {
+                    // Kick Button
+                    if (isHost && socket.playerData && player.id !== socket.playerData.id) {
                          const kickButton = document.createElement('button');
                          kickButton.textContent = 'เตะ';
-                         kickButton.className = 'ml-4 text-xs bg-red-500 text-white px-2 py-1 rounded hover:bg-red-600';
+                         kickButton.className = 'btn bg-red-500 hover:bg-red-600 text-white btn-sm';
                          kickButton.onclick = () => socket.emit('kickPlayer', player.id);
-                         playerDiv.appendChild(kickButton);
+                         rightDiv.appendChild(kickButton);
                     }
                 }
+                
+                playerDiv.appendChild(leftDiv);
+                playerDiv.appendChild(rightDiv);
                 container.appendChild(playerDiv);
             });
         }

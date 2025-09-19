@@ -1,4 +1,3 @@
-// server.js
 const express = require('express');
 const http = require('http');
 const socketIo = require('socket.io');
@@ -16,7 +15,7 @@ const playerSessions = {};
 
 const TAUNTS = ["ว้าย! โหวตผิดเพราะไม่สวยอะดิ", "เอิ้ก ๆ ๆ ๆ", "ชัดขนาดนี้!", "มองยังไงเนี่ย?", "ไปพักผ่อนบ้างนะ"];
 
-// ===== Spectator Global Key =====
+// กุญแจผู้ชมแบบ global (ตั้ง ENV ได้)
 const SPECTATOR_KEY = process.env.SPECTATOR_KEY || 'letmein';
 
 // ===== Helpers =====
@@ -42,7 +41,7 @@ function getAvailableLocations(theme) {
   if (theme === 'fairytale') return locationsData.filter(loc => loc.category === 'fairytale');
   return locationsData;
 }
-// สุ่ม N รายการและ “การันตี” มีคำตอบจริงอยู่ในชุด
+// สุ่ม N ตัวเลือกและ “การันตี” ว่ามีคำตอบจริง
 function pickSpyOptions(allNames, currentLocation, count = 25) {
   const pool = allNames.filter(n => n !== currentLocation);
   shuffleArray(pool);
@@ -70,7 +69,7 @@ io.on('connection', (socket) => {
         socket.emit('rejoinSuccess', { game, roomCode: currentRoomCode, self: player });
         io.to(currentRoomCode).emit('playerReconnected', player.name);
         io.to(currentRoomCode).emit('updatePlayerList', game.players);
-        // ถ้าเป็นสปายระหว่างเกม ให้ส่งรายการสถานที่ทั้งหมดไปให้
+        // ให้สปายเห็นรายการสถานที่ถ้ารีจอยกลางเกม
         if (player.role === 'สายลับ' && ['playing','voting','revoting'].includes(game.state)) {
           const allNames = getAvailableLocations(game.settings.theme).map(l => l.name);
           io.to(player.socketId).emit('spyPossibleLocations', { locations: allNames });
@@ -79,8 +78,10 @@ io.on('connection', (socket) => {
     }
   });
 
-  // ===== Create Room (รองรับสร้างเป็นผู้ชม) =====
+  // ===== Create Room (รองรับสร้างเป็นผู้ชม + อุด token หาย) =====
   socket.on('createRoom', ({ playerName, playerToken, asSpectator }) => {
+    if (!playerName || !String(playerName).trim()) return socket.emit('error', 'กรุณาระบุชื่อผู้เล่น');
+
     const roomCode = generateRoomCode();
     currentRoomCode = roomCode;
     games[roomCode] = {
@@ -92,19 +93,23 @@ io.on('connection', (socket) => {
       usedLocations: []
     };
 
+    let assignedToken; // ถ้าจำเป็น เซิร์ฟเวอร์จะสร้างให้
     if (asSpectator) {
       isSpectator = true;
       const spec = { id: uuidv4(), socketId: socket.id, name: playerName };
       games[roomCode].spectators.push(spec);
-      // ยังไม่มี host จนกว่าจะมีผู้เล่นเข้าห้อง
     } else {
+      if (!playerToken) {
+        assignedToken = uuidv4(); // สร้างให้ เพื่อให้ rejoin ได้
+        playerToken = assignedToken;
+      }
       const player = { id: uuidv4(), socketId: socket.id, name: playerName, isHost: true, score: 0, token: playerToken };
       games[roomCode].players.push(player);
       playerSessions[playerToken] = { roomCode, playerId: player.id };
     }
 
     socket.join(roomCode);
-    socket.emit('roomCreated', { roomCode });
+    socket.emit('roomCreated', { roomCode, assignedToken }); // client จะเก็บ assignedToken ไว้ใน localStorage
     io.to(roomCode).emit('updatePlayerList', games[roomCode].players);
     io.to(roomCode).emit('updateSpectators', games[roomCode].spectators.map(s => s.name));
   });
@@ -114,10 +119,12 @@ io.on('connection', (socket) => {
     const roomCodeUpper = (roomCode || '').toUpperCase();
     if (!games[roomCodeUpper]) return socket.emit('error', 'ไม่พบห้องนี้');
     if (games[roomCodeUpper].state !== 'lobby') return socket.emit('error', 'เกมเริ่มไปแล้ว');
+    if (!playerName || !String(playerName).trim()) return socket.emit('error', 'กรุณาระบุชื่อผู้เล่น');
     currentRoomCode = roomCodeUpper;
 
-    // ถ้ายังไม่มี host (เช่น คนสร้างเป็นผู้ชม) → ผู้เล่นคนแรกที่เข้ามาจะเป็น host
     const noHostYet = !games[roomCodeUpper].players.some(p => p.isHost);
+    if (!playerToken) playerToken = uuidv4(); // อุดกรณี client ยังไม่มี
+
     const player = {
       id: uuidv4(),
       socketId: socket.id,
@@ -130,7 +137,7 @@ io.on('connection', (socket) => {
     playerSessions[playerToken] = { roomCode: roomCodeUpper, playerId: player.id };
 
     socket.join(roomCodeUpper);
-    socket.emit('joinSuccess', { roomCode: roomCodeUpper });
+    socket.emit('joinSuccess', { roomCode: roomCodeUpper, assignedToken: playerToken }); // ส่งกลับให้ client เก็บ
     io.to(roomCodeUpper).emit('updatePlayerList', games[roomCodeUpper].players);
     io.to(roomCodeUpper).emit('updateSpectators', games[roomCodeUpper].spectators.map(s => s.name));
   });
@@ -156,7 +163,7 @@ io.on('connection', (socket) => {
   // ===== Controls =====
   socket.on('startGame', ({ time, rounds, theme }) => {
     if (!currentRoomCode || !games[currentRoomCode]) return;
-    if (isSpectator) return; // ผู้ชมสั่งไม่ได้
+    if (isSpectator) return;
     const game = games[currentRoomCode];
     if (!game.players.find(p => p.socketId === socket.id && p.isHost)) return;
     game.settings = { time: parseInt(time), rounds: parseInt(rounds), theme };
@@ -329,7 +336,6 @@ function startNewRound(roomCode) {
         isHost: player.isHost,
         players: game.players
       });
-      // ให้สปายเห็นรายการสถานที่ทั้งหมดที่เป็นไปได้ตั้งแต่เริ่มรอบ
       if (player.role === 'สายลับ') {
         const allNames = availableLocations.map(l => l.name);
         io.to(player.socketId).emit('spyPossibleLocations', { locations: allNames });
@@ -337,7 +343,7 @@ function startNewRound(roomCode) {
     }
   });
 
-  // นาฬิการอบ (ยังเดินแม้เข้าสู่โหวต)
+  // นาฬิการอบ (ไม่หยุดตอนโหวต)
   let timeLeft = game.settings.time;
   io.to(roomCode).emit('timerUpdate', { timeLeft, players: game.players });
   game.timer = setInterval(() => {
@@ -350,7 +356,6 @@ function startNewRound(roomCode) {
     }
   }, 1000);
 
-  // อัปเดตรายชื่อผู้ชมด้วย
   io.to(roomCode).emit('updatePlayerList', game.players);
   io.to(roomCode).emit('updateSpectators', (game.spectators || []).map(s => s.name));
 }
@@ -359,19 +364,16 @@ function startVote(roomCode, reason) {
   const game = games[roomCode];
   if (!game) return;
 
-  // ถ้าหมดเวลารอบระหว่างกำลังโหวต → สรุปผลเลย
   if ((game.state === 'voting' || game.state === 'revoting') && reason === 'timer_end') {
     return calculateVoteResults(roomCode);
   }
 
-  // อย่าแตะ game.timer (ปล่อยให้เดินต่อ)
   if (game.voteTimer) { clearTimeout(game.voteTimer); game.voteTimer = null; }
 
   game.state = 'voting';
   const voteReason = reason === "timer_end" ? "หมดเวลา! โหวตหาตัวสายลับ" : "หัวหน้าห้องสั่งจบรอบ!";
   io.to(roomCode).emit('startVote', { players: game.players.filter(p => !p.disconnected), reason: voteReason });
 
-  // เดดไลน์การโหวต 120 วินาที
   game.voteTimer = setTimeout(() => calculateVoteResults(roomCode), 120000);
 }
 
@@ -379,7 +381,6 @@ function calculateVoteResults(roomCode) {
   const game = games[roomCode];
   if (!game || !['voting', 'revoting'].includes(game.state)) return;
 
-  // จับ candidates ก่อนเปลี่ยน state (กัน revote เพี้ยน)
   const playersToConsider = (game.state === 'revoting' ? game.revoteCandidates : game.players)
     .filter(p => !p.disconnected);
 
@@ -402,7 +403,6 @@ function calculateVoteResults(roomCode) {
   const isSpyAmongstMostVoted = mostVotedIds.includes(spyId);
 
   if (mostVotedIds.length === 1 && isSpyAmongstMostVoted) {
-    // จับสปายถูก
     let resultText = `ถูกต้อง! ${game.spy.name} คือสายลับ!\nผู้เล่นที่โหวตถูกได้รับ 1 คะแนน:\n`;
     const correctVoters = [];
     for (const voterSocketId in game.votes) {
@@ -414,14 +414,12 @@ function calculateVoteResults(roomCode) {
     resultText += correctVoters.join(', ') || "ไม่มี";
     endGamePhase(roomCode, resultText);
   } else if (mostVotedIds.length > 1 && isSpyAmongstMostVoted) {
-    // เสมอและมีสปายในกลุ่ม -> รีโหวต
     game.state = 'revoting';
     game.votes = {};
     game.revoteCandidates = playersToConsider.filter(p => mostVotedIds.includes(p.id));
     io.to(roomCode).emit('startVote', { players: game.revoteCandidates, reason: "ผลโหวตเสมอ! โหวตอีกครั้ง" });
     game.voteTimer = setTimeout(() => calculateVoteResults(roomCode), 120000);
   } else {
-    // โหวตพลาด -> ให้สปายเดา (สุ่ม 25 รายการ มีคำตอบจริงแน่)
     if (game.spy) game.spy.score++;
     game.state = 'spy-guessing';
 

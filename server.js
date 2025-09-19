@@ -1,19 +1,31 @@
 const express = require('express');
 const http = require('http');
 const socketIo = require('socket.io');
-const { v4: uuidv4 } = require('uuid');
 const path = require('path');
+const { v4: uuidv4 } = require('uuid');
 
 const app = express();
 const server = http.createServer(app);
 const io = socketIo(server);
 
 const locationsData = require('./locations.json');
-app.use(express.static(path.join(__dirname, 'public')));
 
 const games = {};
 const playerSessions = {};
 
+// ✅ serve index.html + static จาก root
+app.use(express.static(__dirname));
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, 'index.html'));
+});
+
+// helper
+function shuffleArray(arr) {
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+}
 function generateRoomCode() {
   let code;
   do {
@@ -21,13 +33,13 @@ function generateRoomCode() {
   } while (games[code]);
   return code;
 }
-function shuffleArray(arr) {
-  for (let i = arr.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [arr[i], arr[j]] = [arr[j], arr[i]];
-  }
+function getAvailableLocations(theme) {
+  if (theme === 'default') return locationsData.filter(l => l.category === 'default');
+  if (theme === 'fairytale') return locationsData.filter(l => l.category === 'fairytale');
+  return locationsData;
 }
 
+// socket.io
 io.on('connection', (socket) => {
   let currentRoomCode = null;
 
@@ -63,61 +75,59 @@ io.on('connection', (socket) => {
   });
 
   socket.on('startGame', ({ time, rounds, theme }) => {
-    if (!currentRoomCode || !games[currentRoomCode]) return;
-    const game = games[currentRoomCode];
-    const host = game.players.find(p => p.socketId === socket.id && p.isHost);
+    const g = games[currentRoomCode];
+    if (!g) return;
+    const host = g.players.find(p => p.socketId === socket.id && p.isHost);
     if (!host) return;
-    game.settings = { time: parseInt(time), rounds: parseInt(rounds), theme };
+    g.settings = { time: parseInt(time), rounds: parseInt(rounds), theme };
     startNewRound(currentRoomCode);
   });
 
   socket.on('hostEndRound', () => {
-    if (!currentRoomCode || !games[currentRoomCode]) return;
-    const game = games[currentRoomCode];
-    const host = game.players.find(p => p.socketId === socket.id && p.isHost);
-    if (host && game.state === 'playing') startVote(currentRoomCode, "host_ended");
+    const g = games[currentRoomCode];
+    if (!g) return;
+    const host = g.players.find(p => p.socketId === socket.id && p.isHost);
+    if (host && g.state === 'playing') startVote(currentRoomCode, "host_ended");
   });
 
   socket.on('submitVote', (votedPlayerId) => {
-    if (!currentRoomCode || !games[currentRoomCode]) return;
-    const game = games[currentRoomCode];
-    if (!['voting','revoting'].includes(game.state)) return;
-    const me = game.players.find(p => p.socketId === socket.id);
+    const g = games[currentRoomCode];
+    if (!g || !['voting','revoting'].includes(g.state)) return;
+    const me = g.players.find(p => p.socketId === socket.id);
     if (!me) return;
     if (votedPlayerId && votedPlayerId === me.id) {
       io.to(socket.id).emit('voteRejected', { reason: 'no-self' });
       return;
     }
-    game.votes[socket.id] = votedPlayerId;
-    const playersToVote = game.state === 'revoting' ? game.revoteCandidates : game.players;
-    if (Object.keys(game.votes).length === playersToVote.filter(p=>!p.disconnected).length) {
+    g.votes[socket.id] = votedPlayerId;
+    const voters = g.state === 'revoting' ? g.revoteCandidates : g.players;
+    if (Object.keys(g.votes).length === voters.filter(p => !p.disconnected).length) {
       calculateVoteResults(currentRoomCode);
     }
   });
 
   socket.on('spyGuessLocation', (guess) => {
-    if (!currentRoomCode || !games[currentRoomCode]) return;
-    const game = games[currentRoomCode];
-    if (game.state !== 'spy-guessing') return;
-    if (socket.id !== game.spy.socketId) return;
+    const g = games[currentRoomCode];
+    if (!g || g.state !== 'spy-guessing') return;
+    if (socket.id !== g.spy.socketId) return;
     let txt = `สายลับหนีรอด! แต่ตอบผิด ได้ 1 คะแนน`;
-    if (guess === game.currentLocation) {
-      game.spy.score++;
+    if (guess === g.currentLocation) {
+      g.spy.score++;
       txt = `สายลับหนีรอดและตอบถูก ได้เพิ่มอีก 1 คะแนน!`;
     }
     endGamePhase(currentRoomCode, txt);
   });
 
   socket.on('requestNextRound', () => {
-    if (!currentRoomCode || !games[currentRoomCode]) return;
     const g = games[currentRoomCode];
+    if (!g) return;
     const host = g.players.find(p => p.socketId === socket.id && p.isHost);
     if (host && g.currentRound < g.settings.rounds) startNewRound(currentRoomCode);
   });
 
   socket.on('resetGame', () => {
-    if (!currentRoomCode || !games[currentRoomCode]) return;
     const g = games[currentRoomCode];
+    if (!g) return;
     const host = g.players.find(p => p.socketId === socket.id && p.isHost);
     if (host) {
       g.state='lobby'; g.currentRound=0; g.usedLocations=[]; g.players.forEach(p=>p.score=0);
@@ -127,12 +137,7 @@ io.on('connection', (socket) => {
   });
 });
 
-function getAvailableLocations(theme){
-  if(theme==='default') return locationsData.filter(l=>l.category==='default');
-  if(theme==='fairytale') return locationsData.filter(l=>l.category==='fairytale');
-  return locationsData;
-}
-
+// game functions
 function startNewRound(roomCode){
   const g=games[roomCode]; if(!g)return;
   g.state='playing'; g.currentRound++; g.votes={};
@@ -186,7 +191,7 @@ function calculateVoteResults(roomCode){
   for(const id in votes){if(votes[id]>max){max=votes[id];top=[id];}else if(votes[id]===max){top.push(id);}}
   const spyId=g.spy?.id; const spyIn=top.includes(spyId);
   if(top.length===1 && spyIn){
-    let txt=`ถูกต้อง! ${g.spy.name} คือสายลับ! ได้ 1 คะแนน`;
+    let txt=`ถูกต้อง! ${g.spy.name} คือสายลับ!`;
     Object.entries(g.votes).forEach(([sid,vid])=>{
       if(vid===spyId){const v=g.players.find(p=>p.socketId===sid);if(v)v.score++;}});
     endGamePhase(roomCode,txt);
@@ -211,5 +216,6 @@ function endGamePhase(roomCode,text){
   });
 }
 
-const PORT=process.env.PORT||3000;
-server.listen(PORT,()=>console.log("Server on",PORT));
+// run server
+const PORT = process.env.PORT || 3000;
+server.listen(PORT, ()=>console.log(`Server running on ${PORT}`));

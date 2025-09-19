@@ -22,7 +22,7 @@
     .location-item.eliminated { text-decoration: line-through; opacity: 0.5; background-color: #fee2e2; }
     .vote-btn:disabled { background-color: #d1d5db; cursor: not-allowed; }
     .player-disconnected { opacity: 0.5; font-style: italic; }
-    .mono { font-family: ui-monospace, Menlo, Consolas, "Liberation Mono", monospace; }
+    .mono { font-family: ui-monospace, Menlo, Consolas, "Liberation Mono", monospace; letter-spacing: .02em; }
   </style>
 </head>
 <body class="bg-gray-100 text-gray-800 flex items-center justify-center min-h-screen p-4">
@@ -236,7 +236,7 @@
       const t=([1e7]+-1e3+-4e3+-8e3+-1e11).replace(/[018]/g,c=>(c^crypto.getRandomValues(new Uint8Array(1))[0]&15>>c/4).toString(16));
       localStorage.setItem('playerToken', t); return t;
     })();
-    let spyLocationsCache = []; // ✅ แคชรายชื่อสถานที่สำหรับสปาย
+    let spyLocationsCache = [];
 
     // ---- utils ----
     function showScreen(n){ Object.values(screens).forEach(s=>s.classList.add('hidden')); screens[n].classList.remove('hidden'); }
@@ -270,6 +270,13 @@
         div.onclick=()=>div.classList.toggle('eliminated'); locationsList.appendChild(div);
       });
     }
+    function updateHostSkipVisibility() {
+      const onGameScreen = !screens.game.classList.contains('hidden');
+      hostEndRoundBtn.classList.toggle('hidden', !(isHost && onGameScreen));
+    }
+    function clearVoteInterval() {
+      if (voteTimerInterval) { clearInterval(voteTimerInterval); voteTimerInterval = null; }
+    }
 
     // ---- socket ----
     const socket = io(); window.socket = socket;
@@ -280,18 +287,18 @@
 
     // home actions
     playerNameInput.addEventListener('input', toggleCreateJoinButtons);
-    const requireName = ()=>{ const n=playerNameInput.value.trim(); if(!n){ nameError.classList.remove('hidden'); return null;} nameError.classList.add('hidden'); return n; };
-    document.getElementById('join-as-spectator').addEventListener('change', e=> spectatorKeyInput.classList.toggle('hidden', !e.target.checked));
+    joinAsSpectatorChk.addEventListener('change', e=> spectatorKeyInput.classList.toggle('hidden', !e.target.checked));
+    function requireName(){ const n=playerNameInput.value.trim(); if(!n){ nameError.classList.remove('hidden'); return null;} nameError.classList.add('hidden'); return n; }
 
-    document.getElementById('create-room-btn').addEventListener('click', ()=>{
+    createRoomBtn.addEventListener('click', ()=>{
       const n=requireName(); if(!n) return;
-      socket.emit('createRoom', { playerName:n, playerToken, asSpectator: !!document.getElementById('create-as-spectator').checked });
+      socket.emit('createRoom', { playerName:n, playerToken, asSpectator: !!createAsSpectatorChk.checked });
     });
 
-    document.getElementById('join-room-btn').addEventListener('click', ()=>{
+    joinRoomBtn.addEventListener('click', ()=>{
       const n=requireName(); if(!n) return;
       const code=roomCodeInput.value.trim().toUpperCase(); if(!code) return;
-      if (document.getElementById('join-as-spectator').checked){
+      if (joinAsSpectatorChk.checked){
         const key=spectatorKeyInput.value.trim();
         socket.emit('joinSpectator', { roomCode: code, name: n, spectatorKey: key });
       } else {
@@ -308,11 +315,6 @@
     abstainVoteBtn.addEventListener('click', ()=> submitVote(null));
     nextRoundBtn.addEventListener('click', ()=>{ socket.emit('requestNextRound'); showModal(null); });
     backToLobbyBtn.addEventListener('click', ()=> socket.emit('resetGame'));
-    document.getElementById('close-locations-btn').addEventListener('click', ()=> showModal(null));
-    document.getElementById('confirm-spy-guess-btn').addEventListener('click', ()=>{ socket.emit('spyGuessLocation', spyLocationGuess.value); showModal(null); });
-    rejoinBtn.addEventListener('click', ()=>{ socket.emit('rejoinGame', localStorage.getItem('playerToken')); rejoinPrompt.classList.add('hidden'); });
-
-    // ปุ่ม “ดูรายชื่อสถานที่” — ถ้าแคชว่าง ให้ขอซ้ำจากเซิร์ฟเวอร์
     showLocationsBtn.addEventListener('click', ()=>{
       showModal('locations');
       if (spyLocationsCache.length===0){
@@ -322,6 +324,9 @@
         renderLocationsList(spyLocationsCache);
       }
     });
+    closeLocationsBtn.addEventListener('click', ()=> showModal(null));
+    confirmSpyGuessBtn.addEventListener('click', ()=>{ socket.emit('spyGuessLocation', spyLocationGuess.value); showModal(null); });
+    rejoinBtn.addEventListener('click', ()=>{ socket.emit('rejoinGame', localStorage.getItem('playerToken')); rejoinPrompt.classList.add('hidden'); });
 
     // ---- socket handlers ----
     socket.on('roomCreated', d=>{ if (d.assignedToken){ playerToken=d.assignedToken; localStorage.setItem('playerToken', playerToken); } showScreen('lobby'); lobbyRoomCode.textContent=d.roomCode; localStorage.setItem('lastRoomCode', d.roomCode); });
@@ -338,6 +343,7 @@
         locationDisplay.textContent = self.role==='สายลับ' ? 'ไม่ทราบ' : game.currentLocation;
         roleDisplay.textContent = self.role;
       }
+      updateHostSkipVisibility();
     });
 
     socket.on('updatePlayerList', players=>{
@@ -354,6 +360,7 @@
       } else {
         gameSettings.classList.add('hidden'); startGameBtn.classList.add('hidden'); testStartBtn.classList.add('hidden');
       }
+      updateHostSkipVisibility();
     });
 
     socket.on('gameStarted', ({ location, role, round, totalRounds, isHost:isPlayerHost, players })=>{
@@ -361,26 +368,30 @@
       currentRoundSpan.textContent=round; totalRoundsSpan.textContent=totalRounds;
       locationDisplay.textContent=location; roleDisplay.textContent=role;
       spyActions.classList.toggle('hidden', role!=='สายลับ');
-      hostEndRoundBtn.classList.toggle('hidden', !isPlayerHost);
       updateScoreboard(players, inGameScoreboard);
-      // เคลียร์แคชทุกครั้งที่เริ่มรอบ (จะถูกเติมเมื่อแพ็กเก็ตมาถึง)
-      spyLocationsCache = [];
+      spyLocationsCache = [];              // เคลียร์แคชทุกครั้งที่เริ่มรอบใหม่
+      clearVoteInterval();                 // กัน interval ค้างจากรอบก่อน
+      updateHostSkipVisibility();
     });
 
-    // อีเวนต์หลักสำหรับสปาย: เก็บแคช + วาดทันทีถ้าโมดัลเปิดอยู่
+    // ได้รายการสถานที่สำหรับสปาย
     socket.on('spyPossibleLocations', ({ locations })=>{
       spyLocationsCache = locations || [];
       if (!modals.locations.classList.contains('hidden')) renderLocationsList(spyLocationsCache);
     });
-    // รองรับอีเวนต์เดิม (allLocations) เพื่อความเข้ากันได้
-    socket.on('allLocations', (all)=>{
+    socket.on('allLocations', (all)=>{ // รองรับอีเวนต์เก่า
       spyLocationsCache = all || [];
       if (!modals.locations.classList.contains('hidden')) renderLocationsList(spyLocationsCache);
     });
 
+    // อัปเดตเวลาเสมอ (แก้อาการ "รอบสองค้าง")
     socket.on('timerUpdate', ({ timeLeft, players })=>{
-      timerDisplay.textContent=`${String(Math.floor(timeLeft/60)).padStart(2,'0')}:${String(timeLeft%60).padStart(2,'0')}`;
+      const mm = String(Math.floor(timeLeft/60)).padStart(2,'0');
+      const ss = String(timeLeft%60).padStart(2,'0');
+      timerDisplay.textContent=`${mm}:${ss}`;
+      // ไม่ใช้ checkVisibility() แล้ว เพื่อความเข้ากันได้
       if (!screens.game.classList.contains('hidden')) updateScoreboard(players, inGameScoreboard);
+      updateHostSkipVisibility();
     });
 
     socket.on('startVote', ({ players, reason })=>{
@@ -392,15 +403,17 @@
           b.onclick=()=>submitVote(p.id); votePlayerButtons.appendChild(b);
         }
       });
-      abstainVoteBtn.disabled=false; let t=120; voteTimerDisplay.textContent=t;
-      clearInterval(voteTimerInterval);
-      voteTimerInterval=setInterval(()=>{ t--; voteTimerDisplay.textContent=t; if (t<=0) clearInterval(voteTimerInterval); }, 1000);
+      abstainVoteBtn.disabled=false;
+      clearVoteInterval();
+      let t=120; voteTimerDisplay.textContent=t;
+      voteTimerInterval=setInterval(()=>{ t--; voteTimerDisplay.textContent=t; if (t<=0) clearVoteInterval(); }, 1000);
     });
 
     function submitVote(id){
       socket.emit('submitVote', id);
       votePlayerButtons.querySelectorAll('button').forEach(b=>b.disabled=true);
-      abstainVoteBtn.disabled=true; clearInterval(voteTimerInterval);
+      abstainVoteBtn.disabled=true;
+      clearVoteInterval(); // ผู้เล่นกดโหวตแล้วหยุดนับฝั่งเรา (เซิร์ฟเวอร์ยังจับเวลาเอง)
     }
 
     socket.on('spyGuessPhase', ({ locations, taunt })=>{
@@ -409,12 +422,12 @@
     });
 
     socket.on('spyIsGuessing', ({ spyName, taunt })=>{
-      document.getElementById('waiting-spy-name').textContent=spyName;
-      waitingTaunt.textContent=taunt||''; showModal('waitingForSpy');
+      waitingSpyName.textContent=spyName; waitingTaunt.textContent=taunt||''; showModal('waitingForSpy');
     });
 
     socket.on('roundOver', ({ location, spyName, resultText, isFinalRound, players })=>{
       showModal('endRound'); endLocation.textContent=location; endSpy.textContent=spyName;
+      clearVoteInterval(); // เผื่อยังเปิดหน้าโหวตอยู่
       let msg=resultText;
       if (isFinalRound){
         endModalTitle.textContent='จบเกม!'; const winner=players.slice().sort((a,b)=>b.score-a.score)[0];
@@ -424,14 +437,15 @@
       } else {
         endModalTitle.textContent='จบรอบ'; nextRoundBtn.classList.toggle('hidden', !isHost); backToLobbyBtn.classList.add('hidden');
       }
-      roundResultText.textContent=msg; updateScoreboard(players, playerList);
+      roundResultText.textContent=msg;
+      updateScoreboard(players, playerList);
     });
 
-    socket.on('returnToLobby', ()=>{ showScreen('lobby'); showModal(null); localStorage.removeItem('lastRoomCode'); });
+    socket.on('returnToLobby', ()=>{ showScreen('lobby'); showModal(null); localStorage.removeItem('lastRoomCode'); clearVoteInterval(); });
     socket.on('kicked', ()=>{ alert('คุณถูกเตะออกจากห้อง'); localStorage.removeItem('lastRoomCode'); location.reload(); });
-    socket.on('playerDisconnected', name=> lobbyMessage.textContent=`${name} หลุดออกจากเกม...`);
-    socket.on('playerReconnected', name=> lobbyMessage.textContent=`${name} กลับเข้าสู่เกม!`);
-    socket.on('newHost', name=> lobbyMessage.textContent=`${name} ได้เป็นหัวหน้าห้องคนใหม่`);
+    socket.on('playerDisconnected', name=> { lobbyMessage.textContent=`${name} หลุดออกจากเกม...`; });
+    socket.on('playerReconnected', name=> { lobbyMessage.textContent=`${name} กลับเข้าสู่เกม!`; });
+    socket.on('newHost', name=> { lobbyMessage.textContent=`${name} ได้เป็นหัวหน้าห้องคนใหม่`; });
   </script>
 </body>
 </html>

@@ -21,7 +21,7 @@ const TAUNTS = [
   "ไปพักผ่อนบ้างนะ"
 ];
 
-// utils
+// helpers
 function generateRoomCode() {
   let code;
   do {
@@ -220,7 +220,6 @@ function startVote(roomCode, reason) {
     reason: voteReason
   });
 
-  // safety net: ถ้ายังโหวตไม่ครบภายใน 120 วินาที → auto calculate
   game.voteTimer = setTimeout(() => calculateVoteResults(roomCode), 120000);
 }
 
@@ -231,7 +230,6 @@ function calculateVoteResults(roomCode) {
   game.state = 'calculating';
   clearTimers(game);
 
-  const playersToConsider = (game.state === 'revoting' ? game.revoteCandidates : game.players).filter(p => !p.disconnected);
   const voteCounts = {};
   Object.values(game.votes).forEach(votedId => {
     if (votedId) voteCounts[votedId] = (voteCounts[votedId] || 0) + 1;

@@ -140,8 +140,14 @@
                         </select>
                     </div>
                  </div>
+                 <div class="mt-4">
+                    <label for="include-fairytale-checkbox" class="flex items-center cursor-pointer">
+                        <input type="checkbox" id="include-fairytale-checkbox" class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" checked>
+                        <span class="ml-2 text-sm text-gray-700">รวมสถานที่จากนิทาน</span>
+                    </label>
+                 </div>
             </div>
-            <button id="start-game-btn" class="btn btn-primary w-full hidden">เริ่มเกม</button>
+            <button id="start-game-btn" class="btn btn-primary w-full hidden mt-6">เริ่มเกม</button>
             <p id="start-game-error" class="text-center text-red-500 mt-2 text-sm"></p>
         </div>
 
@@ -215,6 +221,8 @@
         const gameSettings = document.getElementById('game-settings');
         const timerSelect = document.getElementById('timer-select');
         const roundsSelect = document.getElementById('rounds-select');
+        const includeFairytaleCheckbox = document.getElementById('include-fairytale-checkbox');
+
 
         // Game elements
         const timerDisplay = document.getElementById('timer');
@@ -275,7 +283,8 @@
         startGameBtn.addEventListener('click', () => {
             const time = timerSelect.value;
             const rounds = roundsSelect.value;
-            socket.emit('startGame', { time, rounds });
+            const includeFairytales = includeFairytaleCheckbox.checked;
+            socket.emit('startGame', { time, rounds, includeFairytales });
         });
         
         nextRoundBtn.addEventListener('click', () => {
@@ -307,9 +316,7 @@
             alert(message);
         });
 
-        socket.on('updatePlayerList', (data) => {
-            const players = Array.isArray(data) ? data : (data.players || []);
-            
+        socket.on('updatePlayerList', (players) => {
             playerList.innerHTML = '';
             players.sort((a, b) => (b.score || 0) - (a.score || 0)).forEach(player => {
                 const playerDiv = document.createElement('div');
@@ -349,7 +356,7 @@
             if (isHost) {
                 gameSettings.classList.remove('hidden');
                 startGameBtn.classList.remove('hidden');
-                const canStart = players.length >= 1; // For testing, change to 3 for production
+                const canStart = players.length >= 3;
                 startGameBtn.disabled = !canStart;
                 startGameError.textContent = canStart ? '' : 'ต้องมีผู้เล่นอย่างน้อย 3 คน';
             }

@@ -19,6 +19,7 @@
         .btn-secondary:hover { background-color: #4b5563; }
         .btn-sm { padding: 0.25rem 0.75rem; font-size: 0.875rem; }
         .input-field { width: 100%; padding: 0.75rem; border-radius: 0.5rem; border: 1px solid #d1d5db; }
+        .input-field:disabled { background-color: #f3f4f6; cursor: not-allowed; }
         .location-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 0.5rem; }
         .hidden { display: none; }
         .location-item { cursor: pointer; padding: 0.5rem; border-radius: 0.25rem; transition: all 0.2s; }
@@ -137,7 +138,6 @@
                 if (player.isSpectator) {
                     statusText = ' (ผู้ชม)';
                 } else if (allPlayerRoles === null && screens.lobby.offsetParent !== null) {
-                    // This is for new players joining mid-game, showing as waiting
                     const self = players.find(p => p.token === playerToken);
                     if(self && self.isSpectator && player.id === self.id) statusText = ' (รอเล่นรอบถัดไป)';
                 }
@@ -159,7 +159,7 @@
                         toggleBtn.onclick = () => socket.emit('toggleSpectatorMode');
                         playerDiv.querySelector('.flex-grow').appendChild(toggleBtn);
                     }
-                    if (isHost && player.id !== socket.playerData.id) {
+                    if (isHost && player.id !== (socket.playerData ? socket.playerData.id : null)) {
                          const kickButton = document.createElement('button');
                          kickButton.textContent = 'เตะ';
                          kickButton.className = 'ml-4 text-xs bg-red-500 text-white px-2 py-1 rounded hover:bg-red-600';
@@ -247,15 +247,18 @@
             if (self) { socket.playerData = self; isHost = self.isHost; }
             updateScoreboard(players, playerList);
             
+            // Show settings for everyone, but disable for non-hosts
+            gameSettings.classList.remove('hidden');
+            const settingInputs = gameSettings.querySelectorAll('select');
+            settingInputs.forEach(input => input.disabled = !isHost);
+            
             if (isHost) {
-                gameSettings.classList.remove('hidden');
                 const activePlayers = players.filter(p => !p.disconnected).length;
                 const canStart = activePlayers >= 1;
                 startGameBtn.classList.remove('hidden');
                 startGameBtn.disabled = !canStart;
                 lobbyMessage.textContent = 'คุณคือหัวหน้าห้อง กดเริ่มเกมได้เลย!';
             } else {
-                gameSettings.classList.add('hidden');
                 startGameBtn.classList.add('hidden');
                 if (self && self.isSpectator) {
                      lobbyMessage.textContent = 'คุณอยู่ในโหมดผู้ชม รอหัวหน้าห้องเริ่มเกม';

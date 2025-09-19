@@ -5,7 +5,6 @@ const { v4: uuidv4 } = require('uuid');
 
 const app = express();
 const server = http.createServer(app);
-// FIX: Increase pingTimeout to reduce disconnects when app is minimized
 const io = socketIo(server, {
     pingTimeout: 60000,
 });
@@ -21,7 +20,13 @@ const TAUNTS = ["ว้าย! โหวตผิดเพราะไม่ส�
 // Helper Functions
 function generateRoomCode() { let code; do { code = Math.random().toString(36).substring(2, 6).toUpperCase(); } while (games[code]); return code; }
 function shuffleArray(array) { for (let i = array.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [array[i], array[j]] = [array[j], array[i]]; } }
-function clearTimers(game) { if (game.timer) clearInterval(game.timer); if (game.voteTimer) clearTimeout(game.voteTimer); game.timer = null; game.voteTimer = null; }
+// FIX: Use clearTimeout for the game loop timer
+function clearTimers(game) {
+    if (game.timer) clearTimeout(game.timer);
+    if (game.voteTimer) clearTimeout(game.voteTimer);
+    game.timer = null;
+    game.voteTimer = null;
+}
 
 io.on('connection', (socket) => {
     let currentRoomCode = null;
@@ -129,6 +134,25 @@ io.on('connection', (socket) => {
     });
 });
 
+// FIX: Create a robust game loop function with setTimeout
+function gameLoop(roomCode) {
+    const game = games[roomCode];
+    // Stop the loop if the game state is no longer 'playing'
+    if (!game || game.state !== 'playing') {
+        return;
+    }
+
+    game.timeLeft--;
+    io.to(roomCode).emit('timerUpdate', { timeLeft: Math.max(0, game.timeLeft), players: game.players });
+
+    if (game.timeLeft <= 0) {
+        endRound(roomCode, "timer_end");
+    } else {
+        // Schedule the next tick
+        game.timer = setTimeout(() => gameLoop(roomCode), 1000);
+    }
+}
+
 function getAvailableLocations(theme) {
     if (theme === 'default') return locationsData.filter(loc => loc.category === 'default');
     if (theme === 'fairytale') return locationsData.filter(loc => loc.category === 'fairytale');
@@ -156,7 +180,6 @@ function startNewRound(roomCode) {
         if (socket) {
             socket.emit('gameStarted', { location: player.role === 'สายลับ' ? 'ไม่ทราบ' : location.name, role: player.role, round: game.currentRound, totalRounds: game.settings.rounds, isHost: player.isHost, players: game.players });
             if (player.role === 'สายลับ') {
-                // FIX: Shuffle and slice the locations list for the spy to make it more concise
                 const allLocNames = availableLocations.map(l => l.name);
                 shuffleArray(allLocNames);
                 const spyLocations = allLocNames.slice(0, 25);
@@ -164,15 +187,12 @@ function startNewRound(roomCode) {
             }
         }
     });
-    let timeLeft = game.settings.time;
-    io.to(roomCode).emit('timerUpdate', { timeLeft, players: game.players });
-    game.timer = setInterval(() => {
-        timeLeft--;
-        io.to(roomCode).emit('timerUpdate', { timeLeft: Math.max(0, timeLeft), players: game.players });
-        if (timeLeft <= 0) {
-            endRound(roomCode, "timer_end");
-        }
-    }, 1000);
+
+    // FIX: Replace setInterval with the new gameLoop logic
+    game.timeLeft = game.settings.time;
+    io.to(roomCode).emit('timerUpdate', { timeLeft: game.timeLeft, players: game.players });
+    // Start the game loop
+    game.timer = setTimeout(() => gameLoop(roomCode), 1000);
 }
 
 function endRound(roomCode, reason) {

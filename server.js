@@ -157,7 +157,14 @@ function startNewRound(roomCode) {
     });
     let timeLeft = game.settings.time;
     io.to(roomCode).emit('timerUpdate', { timeLeft, players: game.players });
-    game.timer = setInterval(() => { timeLeft--; io.to(roomCode).emit('timerUpdate', { timeLeft, players: game.players }); if (timeLeft <= 0) endRound(roomCode, "timer_end"); }, 1000);
+    game.timer = setInterval(() => {
+        timeLeft--;
+        // FIX: Prevent timer from displaying negative numbers on client
+        io.to(roomCode).emit('timerUpdate', { timeLeft: Math.max(0, timeLeft), players: game.players });
+        if (timeLeft <= 0) {
+            endRound(roomCode, "timer_end"); // This function already clears the interval
+        }
+    }, 1000);
 }
 
 function endRound(roomCode, reason) {
@@ -168,9 +175,17 @@ function endRound(roomCode, reason) {
     game.state = 'voting';
 
     const voteReason = reason === 'timer_end' ? 'หมดเวลา! โหวตหาตัวสายลับ' : 'หัวหน้าห้องสั่งจบรอบ!';
-    io.to(roomCode).emit('startVote', { players: game.players.filter(p => !p.disconnected), reason: voteReason });
     
-    // FIX: Set a single master timeout for the voting phase, regardless of the reason.
+    // FIX: Send a personalized list of players to each voter to prevent confusion.
+    const activePlayers = game.players.filter(p => !p.disconnected);
+    activePlayers.forEach(voter => {
+        const voteOptions = activePlayers.filter(option => option.id !== voter.id);
+        const socket = io.sockets.sockets.get(voter.socketId);
+        if (socket) {
+            socket.emit('startVote', { players: voteOptions, reason: voteReason });
+        }
+    });
+    
     game.voteTimer = setTimeout(() => calculateVoteResults(roomCode), 120000); // 2 minutes
 }
 
@@ -251,3 +266,4 @@ function endGamePhase(roomCode, resultText) {
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => console.log(`Server is running on port ${PORT}`));
+

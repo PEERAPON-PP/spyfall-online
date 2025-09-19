@@ -17,6 +17,7 @@
         .btn-primary:disabled { background-color: #a5b4fc; cursor: not-allowed; }
         .btn-secondary { color: #fff; background-color: #6b7280; border-color: #6b7280; }
         .btn-secondary:hover { background-color: #4b5563; }
+        .btn-sm { padding: 0.25rem 0.75rem; font-size: 0.875rem; }
         .input-field { width: 100%; padding: 0.75rem; border-radius: 0.5rem; border: 1px solid #d1d5db; }
         .location-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 0.5rem; }
         .hidden { display: none; }
@@ -76,7 +77,7 @@
         <div id="game-screen" class="hidden card">
             <div class="flex justify-between items-center mb-2"><h2 class="text-3xl font-bold text-indigo-600">Spyfall</h2><div id="timer" class="text-2xl font-mono bg-gray-200 px-3 py-1 rounded-md">05:00</div></div>
             <div class="text-sm text-gray-500 mb-2">รอบที่ <span id="current-round">1</span> / <span id="total-rounds">5</span></div>
-            <div id="game-content" class="text-center p-6 bg-gray-50 rounded-lg my-4 min-h-[150px] flex flex-col justify-center items-center"><p class="text-lg mb-2">สถานที่:</p><h3 id="location-display" class="text-2xl font-bold">???</h3><p class="text-sm mt-4 text-gray-500">บทบาท:</p><p id="role-display" class="text-lg font-semibold">???</p></div>
+            <div id="game-content" class="text-center p-6 bg-gray-50 rounded-lg my-4 min-h-[150px] flex flex-col justify-center items-center"><p class="text-lg mb-2">สถานที่:</p><h3 id="location-display" class="text-2xl font-bold">???</h3><p id="role-label" class="text-sm mt-4 text-gray-500">บทบาท:</p><p id="role-display" class="text-lg font-semibold">???</p></div>
             <div id="spy-actions" class="hidden"><button id="show-locations-btn" class="btn btn-secondary w-full">ดูรายชื่อสถานที่</button></div>
             <div class="border-t pt-4 mt-4">
                 <h3 class="font-semibold text-center mb-2">ผู้เล่นและคะแนน</h3>
@@ -85,7 +86,7 @@
             </div>
         </div>
 
-        <!-- NEW: Modal for rejoining as a disconnected player or spectating -->
+        <!-- Rejoin/Spectate Modals -->
         <div id="rejoin-as-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4">
             <div class="card w-full max-w-md">
                 <h3 class="text-2xl font-bold mb-4">เข้าร่วมเกมอีกครั้ง?</h3>
@@ -94,7 +95,6 @@
                 <button id="join-as-spectator-btn" class="btn btn-secondary w-full">ฉันเป็นผู้เล่นใหม่ (รอเล่นรอบถัดไป)</button>
             </div>
         </div>
-
         <div id="locations-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4"><div class="card w-full max-w-lg max-h-[80vh] overflow-y-auto"><h3 class="text-xl font-bold mb-4">รายชื่อสถานที่ (คลิกเพื่อตัดออก)</h3><div id="locations-list" class="location-grid text-sm"></div><button id="close-locations-btn" class="btn btn-primary w-full mt-6">ปิด</button></div></div>
         <div id="voting-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4"><div class="card text-center w-full max-w-md"><h3 id="vote-reason" class="text-2xl font-bold mb-2">โหวตหาตัวสายลับ</h3><p class="mb-4">เหลือเวลา <span id="vote-timer" class="font-bold">120</span> วินาที</p><div id="vote-player-buttons" class="mb-4"></div><button id="abstain-vote-btn" class="btn btn-secondary w-full text-sm py-2">งดออกเสียง</button></div></div>
         <div id="spy-guess-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4"><div class="card text-center w-full max-w-md"><h3 class="text-2xl font-bold mb-4">คุณคือสายลับ!</h3><p id="spy-guess-taunt" class="mb-2 text-red-500 font-semibold"></p><p class="mb-4">คุณหนีรอดมาได้! เลือกทายสถานที่เพื่อรับคะแนนพิเศษ</p><select id="spy-location-guess" class="input-field mb-4"></select><button id="confirm-spy-guess-btn" class="btn btn-primary w-full">ยืนยัน</button></div></div>
@@ -110,7 +110,7 @@
         const modals = { locations: $('locations-modal'), voting: $('voting-modal'), spyGuess: $('spy-guess-modal'), waitingForSpy: $('waiting-for-spy-modal'), endRound: $('end-round-modal'), rejoinAs: $('rejoin-as-modal') };
         const playerNameInput = $('player-name-input'), nameError = $('name-error'), createRoomBtn = $('create-room-btn'), roomCodeInput = $('room-code-input'), joinRoomBtn = $('join-room-btn');
         const lobbyRoomCode = $('lobby-room-code'), copyCodeBtn = $('copy-code-btn'), playerList = $('player-list'), startGameBtn = $('start-game-btn'), gameSettings = $('game-settings'), timerSelect = $('timer-select'), roundsSelect = $('rounds-select'), themeSelect = $('theme-select'), lobbyMessage = $('lobby-message'), voteTimerSelect = $('vote-timer-select');
-        const timerDisplay = $('timer'), locationDisplay = $('location-display'), roleDisplay = $('role-display'), spyActions = $('spy-actions'), showLocationsBtn = $('show-locations-btn'), currentRoundSpan = $('current-round'), totalRoundsSpan = $('total-rounds'), inGameScoreboard = $('in-game-scoreboard'), hostEndRoundBtn = $('host-end-round-btn');
+        const timerDisplay = $('timer'), locationDisplay = $('location-display'), roleDisplay = $('role-display'), spyActions = $('spy-actions'), showLocationsBtn = $('show-locations-btn'), currentRoundSpan = $('current-round'), totalRoundsSpan = $('total-rounds'), inGameScoreboard = $('in-game-scoreboard'), hostEndRoundBtn = $('host-end-round-btn'), roleLabel = $('role-label');
         const locationsList = $('locations-list'), closeLocationsBtn = $('close-locations-btn'), voteReason = $('vote-reason'), voteTimerDisplay = $('vote-timer'), votePlayerButtons = $('vote-player-buttons'), abstainVoteBtn = $('abstain-vote-btn');
         const spyLocationGuess = $('spy-location-guess'), confirmSpyGuessBtn = $('confirm-spy-guess-btn'), waitingSpyName = $('waiting-spy-name'), spyGuessTaunt = $('spy-guess-taunt'), waitingTaunt = $('waiting-taunt');
         const endModalTitle = $('end-modal-title'), endLocation = $('end-location'), endSpy = $('end-spy'), roundResultText = $('round-result-text'), nextRoundBtn = $('next-round-btn'), backToLobbyBtn = $('back-to-lobby-btn');
@@ -123,24 +123,49 @@
         function showScreen(screenName) { Object.values(screens).forEach(s => s.classList.add('hidden')); screens[screenName].classList.remove('hidden'); }
         function showModal(modalName) { Object.values(modals).forEach(m => m.classList.add('hidden')); if(modalName) modals[modalName].classList.remove('hidden'); }
         
-        function updateScoreboard(players, container) {
+        function updateScoreboard(players, container, allPlayerRoles = null) {
             container.innerHTML = '';
-            players.sort((a, b) => b.score - a.score).forEach(player => {
+            const sortedPlayers = [...players].sort((a, b) => b.score - a.score);
+            
+            sortedPlayers.forEach(player => {
                 const playerDiv = document.createElement('div');
                 playerDiv.className = 'flex justify-between items-center bg-gray-100 p-2 rounded';
                 if (player.disconnected) playerDiv.classList.add('player-disconnected');
                 
                 const crown = player.isHost ? '👑 ' : '';
-                const spectator = player.isSpectator ? ' (กำลังรอ)' : '';
+                let statusText = '';
+                if (player.isSpectator) {
+                    statusText = ' (ผู้ชม)';
+                } else if (allPlayerRoles === null && screens.lobby.offsetParent !== null) {
+                    // This is for new players joining mid-game, showing as waiting
+                    const self = players.find(p => p.token === playerToken);
+                    if(self && self.isSpectator && player.id === self.id) statusText = ' (รอเล่นรอบถัดไป)';
+                }
+
+                const roleInfo = allPlayerRoles ? ` - <span class="font-semibold text-indigo-600">${allPlayerRoles.find(r => r.id === player.id)?.role || ''}</span>` : '';
                 
-                playerDiv.innerHTML = `<span>${crown}${player.name}${spectator}</span><span class="font-semibold">${player.score} คะแนน</span>`;
+                playerDiv.innerHTML = `
+                    <div class="flex-grow">
+                        <span>${crown}${player.name}<span class="text-gray-500">${statusText}</span></span>
+                        <span class="text-sm">${roleInfo}</span>
+                    </div>
+                    <span class="font-semibold">${player.score} คะแนน</span>`;
                 
-                if (container === playerList && isHost && player.id !== (socket.playerData ? socket.playerData.id : null)) {
-                     const kickButton = document.createElement('button');
-                     kickButton.textContent = 'เตะ';
-                     kickButton.className = 'ml-4 text-xs bg-red-500 text-white px-2 py-1 rounded hover:bg-red-600';
-                     kickButton.onclick = () => socket.emit('kickPlayer', player.id);
-                     playerDiv.appendChild(kickButton);
+                if (container === playerList) { // Lobby specific buttons
+                    if (socket.playerData && player.id === socket.playerData.id && !player.isHost) {
+                        const toggleBtn = document.createElement('button');
+                        toggleBtn.textContent = player.isSpectator ? 'สลับเป็นผู้เล่น' : 'สลับเป็นผู้ชม';
+                        toggleBtn.className = 'ml-2 btn btn-secondary btn-sm';
+                        toggleBtn.onclick = () => socket.emit('toggleSpectatorMode');
+                        playerDiv.querySelector('.flex-grow').appendChild(toggleBtn);
+                    }
+                    if (isHost && player.id !== socket.playerData.id) {
+                         const kickButton = document.createElement('button');
+                         kickButton.textContent = 'เตะ';
+                         kickButton.className = 'ml-4 text-xs bg-red-500 text-white px-2 py-1 rounded hover:bg-red-600';
+                         kickButton.onclick = () => socket.emit('kickPlayer', player.id);
+                         playerDiv.appendChild(kickButton);
+                    }
                 }
                 container.appendChild(playerDiv);
             });
@@ -210,20 +235,9 @@
             lobbyRoomCode.textContent = roomCode;
             localStorage.setItem('lastRoomCode', roomCode);
 
-            if (self.isSpectator) {
-                 showScreen('lobby');
-                 lobbyMessage.textContent = 'เกมกำลังดำเนินอยู่ คุณจะเข้าร่วมในรอบถัดไป';
-            } else {
-                showScreen(game.state === 'lobby' ? 'lobby' : 'game');
-                if (game.state !== 'lobby') {
-                    currentRoundSpan.textContent = game.currentRound;
-                    totalRoundsSpan.textContent = game.settings.rounds;
-                    locationDisplay.textContent = self.role === 'สายลับ' ? 'ไม่ทราบ' : game.currentLocation;
-                    roleDisplay.textContent = self.role;
-                    spyActions.classList.toggle('hidden', self.role !== 'สายลับ');
-                    hostEndRoundBtn.classList.toggle('hidden', !isHost);
-                    updateScoreboard(game.players, inGameScoreboard);
-                }
+            showScreen(game.state === 'lobby' ? 'lobby' : 'game');
+            if (game.state !== 'lobby') {
+                // This logic implies rejoining a game in progress, spectator status is handled by gameStarted event
             }
         });
         socket.on('error', m => alert(m));
@@ -244,7 +258,7 @@
                 gameSettings.classList.add('hidden');
                 startGameBtn.classList.add('hidden');
                 if (self && self.isSpectator) {
-                    lobbyMessage.textContent = 'เกมกำลังดำเนินอยู่ คุณจะเข้าร่วมในรอบถัดไป';
+                     lobbyMessage.textContent = 'คุณอยู่ในโหมดผู้ชม รอหัวหน้าห้องเริ่มเกม';
                 } else {
                     lobbyMessage.textContent = 'กำลังรอหัวหน้าห้องเริ่มเกม...';
                 }
@@ -278,33 +292,57 @@
             showScreen('lobby');
             lobbyRoomCode.textContent = roomCode;
             localStorage.setItem('lastRoomCode', roomCode);
-            lobbyMessage.textContent = 'เกมกำลังดำเนินอยู่ คุณจะเข้าร่วมในรอบถัดไป';
+            lobbyMessage.textContent = 'คุณได้เข้าร่วมในฐานะผู้ชม รอเล่นรอบถัดไป';
             gameSettings.classList.add('hidden');
             startGameBtn.classList.add('hidden');
         });
 
-        socket.on('gameStarted', ({ location, role, round, totalRounds, isHost: isPlayerHost, players }) => {
-            showScreen('game'); showModal(null); isHost = isPlayerHost;
-            currentRoundSpan.textContent = round; totalRoundsSpan.textContent = totalRounds;
-            locationDisplay.textContent = location; roleDisplay.textContent = role;
-            spyActions.classList.toggle('hidden', role !== 'สายลับ');
-            hostEndRoundBtn.classList.toggle('hidden', !isPlayerHost);
-            updateScoreboard(players, inGameScoreboard);
-        });
+        socket.on('gameStarted', (data) => {
+            showScreen('game');
+            showModal(null);
+            isHost = data.isHost;
+            currentRoundSpan.textContent = data.round;
+            totalRoundsSpan.textContent = data.totalRounds;
+            hostEndRoundBtn.classList.toggle('hidden', !isHost || data.isSpectator);
 
-        socket.on('allLocations', allLocations => {
-            locationsList.innerHTML = '';
-            allLocations.forEach(loc => {
-                const div = document.createElement('div');
-                div.textContent = loc; div.className = 'p-2 bg-gray-100 rounded location-item';
-                div.onclick = () => div.classList.toggle('eliminated');
-                locationsList.appendChild(div);
-            });
+            if (data.isSpectator) {
+                locationDisplay.textContent = data.location;
+                roleLabel.textContent = "สถานะ:"
+                roleDisplay.textContent = "คุณเป็นผู้ชม";
+                spyActions.classList.add('hidden');
+                updateScoreboard(data.players, inGameScoreboard, data.allPlayerRoles);
+            } else {
+                locationDisplay.textContent = data.location;
+                roleLabel.textContent = "บทบาท:"
+                roleDisplay.textContent = data.role;
+                spyActions.classList.toggle('hidden', data.role !== 'สายลับ');
+                updateScoreboard(data.players, inGameScoreboard);
+                if (data.allLocations) {
+                    locationsList.innerHTML = '';
+                    data.allLocations.forEach(loc => {
+                        const div = document.createElement('div');
+                        div.textContent = loc;
+                        div.className = 'p-2 bg-gray-100 rounded location-item';
+                        div.onclick = () => div.classList.toggle('eliminated');
+                        locationsList.appendChild(div);
+                    });
+                }
+            }
         });
 
         socket.on('timerUpdate', ({ timeLeft, players }) => {
             timerDisplay.textContent = `${String(Math.floor(timeLeft/60)).padStart(2,'0')}:${String(timeLeft%60).padStart(2,'0')}`;
-            if(screens.game.offsetParent !== null) updateScoreboard(players, inGameScoreboard);
+            if (screens.game.offsetParent !== null) {
+                // Spectators might need updated roles if someone disconnects/reconnects, but for now just update scores.
+                // A more advanced version might resend the roles if the player list changes.
+                const self = players.find(p => p.token === playerToken);
+                if (self && self.isSpectator) {
+                    // Spectators see roles, but roles don't change mid-round, so no need to pass allPlayerRoles again.
+                    // A better approach would be to get allPlayerRoles from a game state object if it was stored on client.
+                } else {
+                    updateScoreboard(players, inGameScoreboard);
+                }
+            }
         });
 
         socket.on('startVote', ({ players, reason, voteTime }) => {
@@ -353,14 +391,14 @@
             let resultMessage = resultText;
             if (isFinalRound) {
                 endModalTitle.textContent = "จบเกม!";
-                const winner = players.sort((a,b) => b.score - a.score)[0];
+                const winner = [...players].sort((a,b) => b.score - a.score)[0];
                 resultMessage += `\n\n🏆 ผู้ชนะคือ ${winner.name} ด้วยคะแนน ${winner.score} คะแนน!`;
                 nextRoundBtn.classList.add('hidden');
                 if (isHost) backToLobbyBtn.classList.remove('hidden'); else backToLobbyBtn.classList.add('hidden');
                 localStorage.removeItem('lastRoomCode');
             } else {
                 endModalTitle.textContent = "จบรอบ";
-                nextRoundBtn.classList.toggle('hidden', !isHost);
+                nextRoundBtn.classList.toggle('hidden', !isHost || (socket.playerData && socket.playerData.isSpectator));
                 backToLobbyBtn.classList.add('hidden');
             }
             roundResultText.textContent = resultMessage;

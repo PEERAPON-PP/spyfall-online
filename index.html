@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Spyfall - Multiplayer</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Kanit:wght@400;500;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Kanit', sans-serif;
+            touch-action: manipulation;
+        }
+        .card {
+            backface-visibility: hidden;
+            transition: transform 0.6s;
+            transform-style: preserve-3d;
+        }
+        .card-flipped {
+            transform: rotateY(180deg);
+        }
+        .card-face {
+            backface-visibility: hidden;
+        }
+        .card-back {
+            transform: rotateY(180deg);
+        }
+        .btn-primary {
+            @apply bg-indigo-600 text-white font-bold py-3 px-6 rounded-lg shadow-md hover:bg-indigo-700 transition-all duration-300;
+        }
+        .btn-secondary {
+            @apply bg-gray-500 text-white font-bold py-2 px-4 rounded-lg shadow-md hover:bg-gray-600 transition-all duration-300;
+        }
+        .input-field {
+            @apply w-full p-3 border-2 border-gray-300 rounded-lg focus:outline-none focus:border-indigo-500 transition-all;
+        }
+        .toast {
+            animation: fade-in-out 3s ease-in-out forwards;
+        }
+        @keyframes fade-in-out {
+            0% { opacity: 0; transform: translateY(20px); }
+            15% { opacity: 1; transform: translateY(0); }
+            85% { opacity: 1; transform: translateY(0); }
+            100% { opacity: 0; transform: translateY(-20px); }
+        }
+    </style>
+</head>
+<body class="bg-gray-900 text-white flex items-center justify-center min-h-screen p-4">
+
+    <div id="toast-container" class="fixed top-5 right-5 z-50"></div>
+
+    <div id="app" class="w-full max-w-md mx-auto">
+        <!-- Home Screen -->
+        <div id="home-screen" class="space-y-6 text-center">
+            <h1 class="text-5xl font-bold text-indigo-400">Spyfall</h1>
+            <p class="text-gray-400">เกมหาคนแปลกหน้าในหมู่พวกเรา!</p>
+            <div class="bg-gray-800 p-6 rounded-xl shadow-lg space-y-4">
+                <input type="text" id="name-input" placeholder="ใส่ชื่อของคุณ" class="input-field bg-gray-700 text-white placeholder-gray-400">
+                
+                <div id="create-room-section">
+                    <label for="timer-select" class="block mb-2 text-sm font-medium text-gray-300">ตั้งเวลา (นาที):</label>
+                    <select id="timer-select" class="input-field bg-gray-700 text-white">
+                        <option value="5">5</option>
+                        <option value="6">6</option>
+                        <option value="7">7</option>
+                        <option value="8" selected>8</option>
+                        <option value="9">9</option>
+                        <option value="10">10</option>
+                    </select>
+                    <button id="create-room-btn" class="btn-primary w-full mt-4">สร้างห้อง</button>
+                </div>
+                
+                <div class="relative flex py-5 items-center">
+                    <div class="flex-grow border-t border-gray-600"></div>
+                    <span class="flex-shrink mx-4 text-gray-500">หรือ</span>
+                    <div class="flex-grow border-t border-gray-600"></div>
+                </div>
+
+                <div id="join-room-section" class="space-y-4">
+                    <input type="text" id="room-code-input" placeholder="ใส่รหัสห้อง" maxlength="4" class="input-field bg-gray-700 text-white placeholder-gray-400 text-center uppercase tracking-widest text-lg">
+                    <button id="join-room-btn" class="btn-primary w-full bg-teal-600 hover:bg-teal-700">เข้าร่วมห้อง</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Lobby Screen -->
+        <div id="lobby-screen" class="hidden text-center">
+            <h2 class="text-3xl font-bold mb-2">ห้อง: <span id="room-code-display" class="text-indigo-400 font-mono"></span></h2>
+            <p class="text-gray-400 mb-6">กำลังรอผู้เล่น... (ต้องมีอย่างน้อย 3 คน)</p>
+            <div class="bg-gray-800 p-6 rounded-xl shadow-lg min-h-[200px]">
+                <h3 class="text-xl font-semibold mb-4 text-left">รายชื่อผู้เล่น</h3>
+                <ul id="player-list" class="space-y-2 text-left">
+                    <!-- Player list will be populated by JS -->
+                </ul>
+            </div>
+            <button id="start-game-btn" class="btn-primary w-full mt-6 hidden">เริ่มเกม</button>
+        </div>
+
+        <!-- Game Screen -->
+        <div id="game-screen" class="hidden text-center">
+            <div id="timer-display" class="text-6xl font-mono font-bold mb-4">08:00</div>
+            
+            <div id="card-container" class="relative w-72 h-96 mx-auto perspective-1000">
+                 <div id="card" class="card w-full h-full">
+                    <div class="card-face absolute w-full h-full bg-gray-800 rounded-2xl flex items-center justify-center shadow-2xl border-4 border-indigo-500">
+                        <div class="text-center">
+                            <h3 class="text-2xl font-bold">บทบาทของคุณ</h3>
+                            <p class="text-gray-400 mt-2">แตะเพื่อเปิดดู</p>
+                        </div>
+                    </div>
+                    <div class="card-face card-back absolute w-full h-full bg-gray-700 rounded-2xl p-6 flex flex-col justify-center items-center shadow-2xl border-4 border-teal-400">
+                        <div id="role-info">
+                            <p class="text-sm text-gray-400">สถานที่:</p>
+                            <h3 id="location-display" class="text-2xl font-bold text-teal-300 mb-4">???</h3>
+                            <p class="text-sm text-gray-400">บทบาท:</p>
+                            <h4 id="role-display" class="text-xl font-semibold">???</h4>
+                        </div>
+                        <div id="spy-info" class="hidden">
+                             <h3 class="text-3xl font-bold text-red-400">คุณคือสายลับ!</h3>
+                             <p class="text-gray-300 mt-2">พยายามเดาว่าอยู่ที่ไหน</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="mt-6 space-y-4">
+                 <button id="toggle-locations-btn" class="btn-secondary w-full hidden">ดู/ซ่อนรายชื่อสถานที่</button>
+                 <button id="end-game-reveal-btn" class="btn-primary w-full bg-red-600 hover:bg-red-700 hidden">จบเกม / เฉลย</button>
+            </div>
+        </div>
+
+        <!-- Locations Modal -->
+        <div id="locations-modal" class="hidden fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center p-4 z-40">
+            <div class="bg-gray-800 rounded-lg p-6 max-w-md w-full max-h-[80vh] overflow-y-auto">
+                <h3 class="text-2xl font-bold mb-4">รายชื่อสถานที่ทั้งหมด</h3>
+                <ul id="all-locations-list" class="grid grid-cols-2 gap-x-4 gap-y-2 text-left">
+                    <!-- Locations list will be populated by JS -->
+                </ul>
+                <button id="close-locations-btn" class="btn-secondary w-full mt-6">ปิด</button>
+            </div>
+        </div>
+        
+        <!-- End Game Modal -->
+        <div id="end-game-modal" class="hidden fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center p-4 z-40">
+            <div class="bg-gray-800 rounded-lg p-8 max-w-md w-full text-center">
+                <h3 class="text-3xl font-bold mb-4">เกมจบแล้ว!</h3>
+                <p class="text-lg mb-2">สถานที่คือ: <span id="final-location" class="font-bold text-teal-300"></span></p>
+                <p class="text-lg mb-6">สายลับคือ: <span id="final-spy" class="font-bold text-red-400"></span></p>
+                <div id="final-roles" class="text-left mb-6 bg-gray-700 p-4 rounded-lg">
+                    <!-- Final roles populated by JS -->
+                </div>
+                <button id="play-again-btn" class="btn-primary w-full hidden">เล่นอีกครั้ง</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        const socket = io();
+
+        // UI Elements
+        const screens = {
+            home: document.getElementById('home-screen'),
+            lobby: document.getElementById('lobby-screen'),
+            game: document.getElementById('game-screen'),
+        };
+        const nameInput = document.getElementById('name-input');
+        const timerSelect = document.getElementById('timer-select');
+        const roomCodeInput = document.getElementById('room-code-input');
+        const createRoomBtn = document.getElementById('create-room-btn');
+        const joinRoomBtn = document.getElementById('join-room-btn');
+        const roomCodeDisplay = document.getElementById('room-code-display');
+        const playerList = document.getElementById('player-list');
+        const startGameBtn = document.getElementById('start-game-btn');
+        const timerDisplay = document.getElementById('timer-display');
+        const card = document.getElementById('card');
+        const roleInfo = document.getElementById('role-info');
+        const spyInfo = document.getElementById('spy-info');
+        const locationDisplay = document.getElementById('location-display');
+        const roleDisplay = document.getElementById('role-display');
+        const toggleLocationsBtn = document.getElementById('toggle-locations-btn');
+        const endGameRevealBtn = document.getElementById('end-game-reveal-btn');
+        const locationsModal = document.getElementById('locations-modal');
+        const allLocationsList = document.getElementById('all-locations-list');
+        const closeLocationsBtn = document.getElementById('close-locations-btn');
+        const endGameModal = document.getElementById('end-game-modal');
+        const finalLocation = document.getElementById('final-location');
+        const finalSpy = document.getElementById('final-spy');
+        const finalRoles = document.getElementById('final-roles');
+        const playAgainBtn = document.getElementById('play-again-btn');
+        const toastContainer = document.getElementById('toast-container');
+
+        let currentRoomCode = null;
+        let isHost = false;
+        let myName = '';
+        
+        // --- Event Listeners ---
+        createRoomBtn.addEventListener('click', () => {
+            const name = nameInput.value.trim();
+            if (name) {
+                myName = name;
+                isHost = true;
+                const timerMinutes = timerSelect.value;
+                socket.emit('createRoom', { name, timerMinutes });
+            } else {
+                showToast('กรุณาใส่ชื่อของคุณ');
+            }
+        });
+
+        joinRoomBtn.addEventListener('click', () => {
+            const name = nameInput.value.trim();
+            const roomCode = roomCodeInput.value.trim().toUpperCase();
+            if (name && roomCode) {
+                myName = name;
+                socket.emit('joinRoom', { roomCode, name });
+            } else {
+                showToast('กรุณาใส่ชื่อและรหัสห้อง');
+            }
+        });
+        
+        startGameBtn.addEventListener('click', () => {
+            if (currentRoomCode) {
+                socket.emit('startGame', { roomCode: currentRoomCode });
+            }
+        });
+        
+        endGameRevealBtn.addEventListener('click', () => {
+            socket.emit('endGame', { roomCode: currentRoomCode });
+        });
+
+        playAgainBtn.addEventListener('click', () => {
+            socket.emit('playAgain', { roomCode: currentRoomCode });
+        });
+
+        card.addEventListener('click', () => card.classList.toggle('card-flipped'));
+        
+        toggleLocationsBtn.addEventListener('click', () => {
+            locationsModal.classList.remove('hidden');
+        });
+
+        closeLocationsBtn.addEventListener('click', () => {
+            locationsModal.classList.add('hidden');
+        });
+
+        // --- Socket.IO Handlers ---
+        socket.on('roomCreated', ({ roomCode }) => {
+            currentRoomCode = roomCode;
+            roomCodeDisplay.textContent = roomCode;
+            showScreen('lobby');
+        });
+
+        socket.on('joinSuccess', ({ roomCode }) => {
+            currentRoomCode = roomCode;
+            roomCodeDisplay.textContent = roomCode;
+            showScreen('lobby');
+        });
+
+        socket.on('joinError', (message) => {
+            showToast(message, 'error');
+        });
+
+        socket.on('updateLobby', ({ players, hostId }) => {
+            playerList.innerHTML = '';
+            players.forEach(player => {
+                const li = document.createElement('li');
+                li.className = 'flex items-center bg-gray-700 p-2 rounded';
+                let content = player.name;
+                if (player.id === hostId) {
+                    content += ' <span class="ml-2 text-xs bg-indigo-500 text-white px-2 py-0.5 rounded-full">หัวห้อง</span>';
+                }
+                if (player.name === myName) {
+                    content += ' <span class="ml-2 text-xs text-teal-300">(คุณ)</span>';
+                }
+                li.innerHTML = content;
+                playerList.appendChild(li);
+            });
+            
+            if (socket.id === hostId) {
+                isHost = true;
+                startGameBtn.classList.remove('hidden');
+                startGameBtn.disabled = players.length < 3;
+                startGameBtn.textContent = players.length < 3 ? `ต้องการผู้เล่นอีก ${3 - players.length} คน` : 'เริ่มเกม';
+            } else {
+                isHost = false;
+                startGameBtn.classList.add('hidden');
+            }
+        });
+        
+        socket.on('gameStarted', (data) => {
+            resetCard();
+            if (data.isSpy) {
+                spyInfo.classList.remove('hidden');
+                roleInfo.classList.add('hidden');
+                toggleLocationsBtn.classList.remove('hidden');
+                populateLocationsList(data.allLocations);
+            } else {
+                spyInfo.classList.add('hidden');
+                roleInfo.classList.remove('hidden');
+                toggleLocationsBtn.classList.add('hidden');
+                locationDisplay.textContent = data.location;
+                roleDisplay.textContent = data.role;
+            }
+            if (isHost) {
+                endGameRevealBtn.classList.remove('hidden');
+            }
+            showScreen('game');
+        });
+        
+        socket.on('timerUpdate', (seconds) => {
+            const min = Math.floor(seconds / 60).toString().padStart(2, '0');
+            const sec = (seconds % 60).toString().padStart(2, '0');
+            timerDisplay.textContent = `${min}:${sec}`;
+        });
+        
+        socket.on('gameEnded', ({ spyName, locationName, roles }) => {
+            finalSpy.textContent = spyName;
+            finalLocation.textContent = locationName;
+            finalRoles.innerHTML = roles.map(p => `<div><span class="font-semibold">${p.name}:</span> ${p.role}</div>`).join('');
+            
+            playAgainBtn.classList.toggle('hidden', !isHost);
+            
+            locationsModal.classList.add('hidden');
+            endGameModal.classList.remove('hidden');
+            showScreen('game'); // Keep game screen visible behind modal
+        });
+        
+        socket.on('returnToLobby', () => {
+            resetUIForNewGame();
+            showScreen('lobby');
+        });
+
+        // --- Helper Functions ---
+        function showScreen(screenName) {
+            Object.values(screens).forEach(screen => screen.classList.add('hidden'));
+            screens[screenName].classList.remove('hidden');
+        }
+        
+        function showToast(message, type = 'info') {
+            const toast = document.createElement('div');
+            const bgColor = type === 'error' ? 'bg-red-500' : 'bg-indigo-500';
+            toast.className = `toast ${bgColor} text-white text-sm font-bold px-4 py-2 rounded-lg shadow-lg`;
+            toast.textContent = message;
+            toastContainer.appendChild(toast);
+            setTimeout(() => toast.remove(), 3000);
+        }
+
+        function populateLocationsList(locations) {
+            allLocationsList.innerHTML = '';
+            locations.forEach(loc => {
+                const li = document.createElement('li');
+                li.textContent = loc;
+                allLocationsList.appendChild(li);
+            });
+        }
+        
+        function resetCard() {
+            card.classList.remove('card-flipped');
+        }
+        
+        function resetUIForNewGame() {
+            endGameModal.classList.add('hidden');
+            endGameRevealBtn.classList.add('hidden');
+            toggleLocationsBtn.classList.add('hidden');
+            resetCard();
+        }
+
+    </script>
+</body>
+</html>
+

@@ -5,7 +5,10 @@ const { v4: uuidv4 } = require('uuid');
 
 const app = express();
 const server = http.createServer(app);
-const io = socketIo(server);
+// FIX: Increase pingTimeout to reduce disconnects when app is minimized
+const io = socketIo(server, {
+    pingTimeout: 60000,
+});
 
 const locationsData = require('./locations.json');
 app.use(express.static(__dirname));
@@ -152,17 +155,22 @@ function startNewRound(roomCode) {
         const socket = io.sockets.sockets.get(player.socketId);
         if (socket) {
             socket.emit('gameStarted', { location: player.role === 'สายลับ' ? 'ไม่ทราบ' : location.name, role: player.role, round: game.currentRound, totalRounds: game.settings.rounds, isHost: player.isHost, players: game.players });
-            if (player.role === 'สายลับ') socket.emit('allLocations', availableLocations.map(l => l.name));
+            if (player.role === 'สายลับ') {
+                // FIX: Shuffle and slice the locations list for the spy to make it more concise
+                const allLocNames = availableLocations.map(l => l.name);
+                shuffleArray(allLocNames);
+                const spyLocations = allLocNames.slice(0, 25);
+                socket.emit('allLocations', spyLocations);
+            }
         }
     });
     let timeLeft = game.settings.time;
     io.to(roomCode).emit('timerUpdate', { timeLeft, players: game.players });
     game.timer = setInterval(() => {
         timeLeft--;
-        // FIX: Prevent timer from displaying negative numbers on client
         io.to(roomCode).emit('timerUpdate', { timeLeft: Math.max(0, timeLeft), players: game.players });
         if (timeLeft <= 0) {
-            endRound(roomCode, "timer_end"); // This function already clears the interval
+            endRound(roomCode, "timer_end");
         }
     }, 1000);
 }
@@ -176,7 +184,6 @@ function endRound(roomCode, reason) {
 
     const voteReason = reason === 'timer_end' ? 'หมดเวลา! โหวตหาตัวสายลับ' : 'หัวหน้าห้องสั่งจบรอบ!';
     
-    // FIX: Send a personalized list of players to each voter to prevent confusion.
     const activePlayers = game.players.filter(p => !p.disconnected);
     activePlayers.forEach(voter => {
         const voteOptions = activePlayers.filter(option => option.id !== voter.id);
@@ -189,7 +196,6 @@ function endRound(roomCode, reason) {
     game.voteTimer = setTimeout(() => calculateVoteResults(roomCode), 120000); // 2 minutes
 }
 
-// FIX: Added the complete logic for calculating vote results
 function calculateVoteResults(roomCode) {
     const game = games[roomCode];
     if (!game || !['voting', 'revoting'].includes(game.state)) return;
@@ -217,16 +223,13 @@ function calculateVoteResults(roomCode) {
     if (mostVotedIds.length === 1) {
         const votedPlayerId = mostVotedIds[0];
         if (votedPlayerId === spyId) {
-            // Spy was caught
             const resultText = `จับสายลับได้สำเร็จ!\nผู้เล่นทุกคน (ยกเว้นสายลับ) ได้รับ 1 คะแนน`;
             game.players.forEach(p => { if (p.id !== spyId && !p.disconnected) p.score++; });
             endGamePhase(roomCode, resultText);
         } else {
-            // Voted for the wrong person
             spyEscapes(roomCode, "โหวตผิดคน!");
         }
     } else {
-        // Tie or no majority, spy escapes
         spyEscapes(roomCode, "โหวตไม่เป็นเอกฉันท์!");
     }
 }

@@ -75,7 +75,7 @@ io.on('connection', (socket) => {
 
     socket.on('hostEndRound', () => { if (currentRoomCode && games[currentRoomCode]) { const game = games[currentRoomCode]; const p = game.players.find(pl => pl.socketId === socket.id); if (p && p.isHost && game.state === 'playing') endRound(currentRoomCode, "host_ended"); } });
     socket.on('submitVote', (votedPlayerId) => { if (currentRoomCode && games[currentRoomCode]) { const game = games[currentRoomCode]; if (['voting', 'revoting'].includes(game.state)) { game.votes[socket.id] = votedPlayerId; const playersToVote = game.state === 'revoting' ? game.revoteCandidates : game.players; if (Object.keys(game.votes).length === playersToVote.filter(p => !p.disconnected).length) { clearTimeout(game.voteTimer); calculateVoteResults(currentRoomCode); } } } });
-    socket.on('spyGuessLocation', (guessedLocation) => { if (currentRoomCode && games[currentRoomCode]) { const game = games[currentRoomCode]; if (game.state === 'spy-guessing' && socket.id === game.spy.socketId) { let resultText = `สายลับหนีรอด! แต่ตอบสถานที่ผิด\nสายลับได้รับ 1 คะแนน`; if (guessedLocation === game.currentLocation) { game.spy.score++; resultText = `สายลับหนีรอด และตอบสถานที่ถูกต้อง!\nสายลับได้รับเพิ่มอีก 1 คะแนน!`; } endGamePhase(currentRoomCode, resultText); } } });
+    socket.on('spyGuessLocation', (guessedLocation) => { if (currentRoomCode && games[currentRoomCode]) { const game = games[currentRoomCode]; if (game.state === 'spy-guessing' && socket.id === game.spy.socketId) { let resultText; if (guessedLocation === game.currentLocation) { game.spy.score++; resultText = `สายลับหนีรอด และตอบสถานที่ถูกต้อง!\nสายลับได้รับเพิ่มอีก 1 คะแนน! (รวมเป็น 2)`; } else { resultText = `สายลับหนีรอด! แต่ตอบสถานที่ผิด\nสายลับได้รับ 1 คะแนน`; } endGamePhase(currentRoomCode, resultText); } } });
     socket.on('requestNextRound', () => { if (currentRoomCode && games[currentRoomCode]) { const game = games[currentRoomCode]; if (game.players.find(p => p.socketId === socket.id && p.isHost) && game.currentRound < game.settings.rounds) startNewRound(currentRoomCode); } });
     socket.on('resetGame', () => { if (currentRoomCode && games[currentRoomCode]) { const game = games[currentRoomCode]; if (game.players.find(p => p.socketId === socket.id && p.isHost)) { game.state = 'lobby'; game.currentRound = 0; game.usedLocations = []; game.players.forEach(p => p.score = 0); clearTimers(game); io.to(currentRoomCode).emit('returnToLobby'); io.to(currentRoomCode).emit('updatePlayerList', game.players); } } });
 
@@ -114,7 +114,6 @@ io.on('connection', (socket) => {
                     io.to(currentRoomCode).emit('updatePlayerList', game.players);
                 }
             }
-            // If all players are disconnected, clean up the game after a delay
             if (game.players.every(p => p.disconnected)) {
                 setTimeout(() => {
                     if (games[currentRoomCode] && games[currentRoomCode].players.every(p => p.disconnected)) {
@@ -136,7 +135,7 @@ function getAvailableLocations(theme) {
 function startNewRound(roomCode) {
     const game = games[roomCode]; if (!game) return;
     clearTimers(game);
-    game.state = 'playing'; game.currentRound++; game.votes = {};
+    game.state = 'playing'; game.currentRound++; game.votes = {}; game.revoteCandidates = [];
     const availableLocations = getAvailableLocations(game.settings.theme);
     if (game.usedLocations.length >= availableLocations.length) game.usedLocations = []; 
     let locationPool = availableLocations.filter(loc => !game.usedLocations.includes(loc.name));
@@ -168,65 +167,87 @@ function endRound(roomCode, reason) {
     clearTimers(game);
     game.state = 'voting';
 
-    const voteReason =
-        reason === 'timer_end'
-            ? 'หมดเวลา! โหวตหาตัวสายลับ'
-            : 'หัวหน้าห้องสั่งจบรอบ!';
+    const voteReason = reason === 'timer_end' ? 'หมดเวลา! โหวตหาตัวสายลับ' : 'หัวหน้าห้องสั่งจบรอบ!';
+    io.to(roomCode).emit('startVote', { players: game.players.filter(p => !p.disconnected), reason: voteReason });
+    
+    // FIX: Set a single master timeout for the voting phase, regardless of the reason.
+    game.voteTimer = setTimeout(() => calculateVoteResults(roomCode), 120000); // 2 minutes
+}
 
-    io.to(roomCode).emit('startVote', {
-        players: game.players.filter(p => !p.disconnected),
-        reason: voteReason
+// FIX: Added the complete logic for calculating vote results
+function calculateVoteResults(roomCode) {
+    const game = games[roomCode];
+    if (!game || !['voting', 'revoting'].includes(game.state)) return;
+
+    const spyId = game.spy.id;
+    const voteCounts = {};
+    
+    Object.values(game.votes).forEach(votedId => {
+        if (votedId) {
+            voteCounts[votedId] = (voteCounts[votedId] || 0) + 1;
+        }
     });
 
-    // ถ้าหัวหน้าห้องเป็นผู้บังคับจบรอบ ให้สรุปผลโหวตทันที
-    if (reason === 'host_ended') {
-        clearTimeout(game.voteTimer);
-        game.voteTimer = setTimeout(() => calculateVoteResults(roomCode), 0);
+    let maxVotes = 0;
+    let mostVotedIds = [];
+    for (const playerId in voteCounts) {
+        if (voteCounts[playerId] > maxVotes) {
+            maxVotes = voteCounts[playerId];
+            mostVotedIds = [playerId];
+        } else if (voteCounts[playerId] === maxVotes) {
+            mostVotedIds.push(playerId);
+        }
+    }
+
+    if (mostVotedIds.length === 1) {
+        const votedPlayerId = mostVotedIds[0];
+        if (votedPlayerId === spyId) {
+            // Spy was caught
+            const resultText = `จับสายลับได้สำเร็จ!\nผู้เล่นทุกคน (ยกเว้นสายลับ) ได้รับ 1 คะแนน`;
+            game.players.forEach(p => { if (p.id !== spyId && !p.disconnected) p.score++; });
+            endGamePhase(roomCode, resultText);
+        } else {
+            // Voted for the wrong person
+            spyEscapes(roomCode, "โหวตผิดคน!");
+        }
     } else {
-        clearTimeout(game.voteTimer);
-        game.voteTimer = setTimeout(() => calculateVoteResults(roomCode), 120000);
+        // Tie or no majority, spy escapes
+        spyEscapes(roomCode, "โหวตไม่เป็นเอกฉันท์!");
     }
 }
 
-function calculateVoteResults(roomCode) {
-    const game = games[roomCode]; 
-    if (!game || !['voting', 'revoting'].includes(game.state)) return;
-    const previousState = game.state;
-    game.state = 'calculating';
-    const playersToConsider = (previousState === 'revoting' ? game.revoteCandidates : game.players)
-          .filter(p => !p.disconnected);
-    playersToConsider.forEach(p => { if (!game.votes[p.socketId]) game.votes[p.socketId] = null; });
-
-    // … ตัดส่วนคำนวณคะแนนและกรณีอื่นออกเพื่อความกระชับ …
-
-    // ถ้าโหวตไม่สำเร็จ ให้สายลับหนีและทายสถานที่
+function spyEscapes(roomCode, reason) {
+    const game = games[roomCode];
     game.spy.score++;
     game.state = 'spy-guessing';
-    const taunt = (mostVotedIds.length > 0 && !mostVotedIds.includes(spyId))
-        ? TAUNTS[Math.floor(Math.random() * TAUNTS.length)]
-        : "";
-    // สุ่มลำดับและจำกัดรายชื่อสถานที่ให้เหลือ 25 แห่ง
+
+    const taunt = TAUNTS[Math.floor(Math.random() * TAUNTS.length)];
+    
     const allLocNames = getAvailableLocations(game.settings.theme).map(l => l.name);
     shuffleArray(allLocNames);
     const spyLocations = allLocNames.slice(0, 25);
-    // ส่งลิสต์สถานที่และ taunt ให้สายลับ
-    io.to(game.spy.socketId).emit('spyGuessPhase', { locations: spyLocations, taunt });
-    // แจ้งผู้เล่นอื่นให้รอสายลับทาย
+    
+    const spySocket = io.sockets.sockets.get(game.spy.socketId);
+    if(spySocket) {
+        spySocket.emit('spyGuessPhase', { locations: spyLocations, taunt: `${reason} ${taunt}` });
+    }
+
     game.players.forEach(p => {
-        if (p.socketId !== game.spy.socketId) {
-            io.to(p.socketId).emit('spyIsGuessing', { spyName: game.spy.name, taunt });
+        if (p.id !== game.spy.id) {
+            const playerSocket = io.sockets.sockets.get(p.socketId);
+            if(playerSocket) {
+                playerSocket.emit('spyIsGuessing', { spyName: game.spy.name, taunt: `${reason} ${taunt}` });
+            }
         }
     });
 }
 
 function endGamePhase(roomCode, resultText) {
     const game = games[roomCode]; if (!game) return;
+    clearTimers(game);
     game.state = 'post-round';
     io.to(roomCode).emit('roundOver', { location: game.currentLocation, spyName: game.spy ? game.spy.name : 'ไม่มี', resultText, isFinalRound: game.currentRound >= game.settings.rounds, players: game.players });
 }
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => console.log(`Server is running on port ${PORT}`));
-
-// Add this line to your package.json dependencies: "uuid": "^9.0.1"
-// Then run: npm install

@@ -36,6 +36,16 @@ function clearTimers(game) {
   game.voteTimer = null;
 }
 
+// สุ่มตัวเลือก N รายการ โดย “รับประกัน” ว่ามี currentLocation อยู่ในชุด
+function pickSpyOptions(allNames, currentLocation, count = 25) {
+  const pool = allNames.filter(n => n !== currentLocation);
+  shuffleArray(pool);
+  const picks = pool.slice(0, Math.max(0, count - 1));
+  picks.push(currentLocation);
+  shuffleArray(picks);
+  return picks;
+}
+
 io.on('connection', (socket) => {
   let currentRoomCode = null;
 
@@ -116,7 +126,7 @@ io.on('connection', (socket) => {
     }
   });
 
-  // ✅ แก้บั๊ก: ใช้ currentRoomCode ที่อยู่ในสโคปนี้จริง และเพิ่มการ์ดกันพัง
+  // ให้สปายเดาสถานที่
   socket.on('spyGuessLocation', (guessedLocation) => {
     if (!currentRoomCode || !games[currentRoomCode]) return;
     const game = games[currentRoomCode];
@@ -246,26 +256,56 @@ function startNewRound(roomCode) {
         isHost: player.isHost,
         players: game.players
       });
-      if (player.role === 'สายลับ') socket.emit('allLocations', availableLocations.map(l => l.name));
+      // (ปล่อยให้สปายเห็น full list ตอนเริ่มก็ได้ หรือจะไม่ส่งเลยจนกว่าจะเข้าช่วงเดาก็ได้)
+      // socket.emit('allLocations', availableLocations.map(l => l.name)); // ถ้าต้องการ
     }
   });
 
+  // ===== Timer กลางรอบ (เดินต่อแม้เข้าสู่โหวต) =====
   let timeLeft = game.settings.time;
   io.to(roomCode).emit('timerUpdate', { timeLeft, players: game.players });
   game.timer = setInterval(() => {
+    // เวลาเดินต่อเนื่อง ไม่สนว่าอยู่ state ไหน
     timeLeft--;
     io.to(roomCode).emit('timerUpdate', { timeLeft, players: game.players });
-    if (timeLeft <= 0) startVote(roomCode, "timer_end");
+    if (timeLeft <= 0) {
+      const g = games[roomCode];
+      if (!g) return;
+      // ถ้าหมดเวลาในช่วงเล่นปกติ -> เปิดโหวต
+      if (g.state === 'playing') {
+        startVote(roomCode, "timer_end");
+      }
+      // ถ้าหมดเวลา “ระหว่างโหวต” -> ปิดโหวตและคำนวณผลทันที
+      else if (g.state === 'voting' || g.state === 'revoting') {
+        calculateVoteResults(roomCode);
+      }
+      // หลังหมดเวลาแล้ว ปล่อยให้โค้ดปลายทางจัดการ clear เอง (อย่าล้าง interval ที่นี่)
+    }
   }, 1000);
 }
 
+/**
+ * Start voting โดย “ไม่หยุด” นาฬิกากลางรอบ
+ * - เดิมเคย clearTimers(game) ทำให้นาฬิกาหยุด → แก้โดยไม่แตะ game.timer
+ * - ตั้ง deadline เฉพาะของโหวตด้วย voteTimer ได้ตามเดิม
+ */
 function startVote(roomCode, reason) {
   const game = games[roomCode];
   if (!game) return;
-  clearTimers(game);
+
+  // ถ้าเรียกซ้ำจาก timer ตอนอยู่ในช่วงโหวตแล้ว และเหตุคือ timer_end → สรุปผลเลย
+  if ((game.state === 'voting' || game.state === 'revoting') && reason === 'timer_end') {
+    return calculateVoteResults(roomCode);
+  }
+
+  // อย่าแตะ game.timer (ปล่อยให้นับต่อ)
+  if (game.voteTimer) { clearTimeout(game.voteTimer); game.voteTimer = null; }
+
   game.state = 'voting';
   const voteReason = reason === "timer_end" ? "หมดเวลา! โหวตหาตัวสายลับ" : "หัวหน้าห้องสั่งจบรอบ!";
   io.to(roomCode).emit('startVote', { players: game.players.filter(p => !p.disconnected), reason: voteReason });
+
+  // ตั้งเดดไลน์การโหวต (ยังอิสระจากนาฬิกากลางรอบ)
   game.voteTimer = setTimeout(() => calculateVoteResults(roomCode), 120000);
 }
 
@@ -273,12 +313,12 @@ function calculateVoteResults(roomCode) {
   const game = games[roomCode];
   if (!game || !['voting', 'revoting'].includes(game.state)) return;
 
-  // ✅ จับ candidates ก่อนเปลี่ยน state เพื่อไม่ให้เงื่อนไข revoting เพี้ยน
+  // จับ candidates ก่อนเปลี่ยน state เพื่อให้ revote ถูกต้อง
   const playersToConsider = (game.state === 'revoting' ? game.revoteCandidates : game.players)
     .filter(p => !p.disconnected);
 
   game.state = 'calculating';
-  clearTimers(game);
+  if (game.voteTimer) { clearTimeout(game.voteTimer); game.voteTimer = null; } // ไม่แตะ game.timer
 
   const voteCounts = {};
   Object.values(game.votes || {}).forEach(votedId => {
@@ -300,7 +340,7 @@ function calculateVoteResults(roomCode) {
   const isSpyAmongstMostVoted = mostVotedIds.includes(spyId);
 
   if (mostVotedIds.length === 1 && isSpyAmongstMostVoted) {
-    // Correctly voted for the spy with no ties
+    // จับสปายถูก
     let resultText = `ถูกต้อง! ${game.spy.name} คือสายลับ!\nผู้เล่นที่โหวตถูกได้รับ 1 คะแนน:\n`;
     let correctVoters = [];
     for (const voterSocketId in game.votes) {
@@ -315,22 +355,26 @@ function calculateVoteResults(roomCode) {
     resultText += correctVoters.join(', ') || "ไม่มี";
     endGamePhase(roomCode, resultText);
   } else if (mostVotedIds.length > 1 && isSpyAmongstMostVoted) {
-    // A tie vote and the spy is in the tie, start revote
+    // เสมอและมีสปายในกลุ่ม -> รีโหวต
     game.state = 'revoting';
     game.votes = {};
-    // ✅ ใช้เฉพาะผู้เล่นที่ยังอยู่ในเกม (กรอง disconnect แล้ว)
     game.revoteCandidates = playersToConsider.filter(p => mostVotedIds.includes(p.id));
     io.to(roomCode).emit('startVote', { players: game.revoteCandidates, reason: "ผลโหวตเสมอ! โหวตอีกครั้ง" });
-    game.voteTimer = setTimeout(() => calculateVoteResults(roomCode), 120000); // 2 minute revote timer
+    game.voteTimer = setTimeout(() => calculateVoteResults(roomCode), 120000);
   } else {
-    // Vote failed to find the spy (either wrong vote or spy was not in the tie)
-    game.spy.score++;
+    // โหวตพลาด -> เข้าสู่ช่วงให้สปายเดา
+    if (game.spy) game.spy.score++;
     game.state = 'spy-guessing';
+
+    const allNames = getAvailableLocations(game.settings.theme).map(l => l.name);
+    const options25 = pickSpyOptions(allNames, game.currentLocation, 25); // ✅ สุ่ม + การันตีมีคำตอบจริง
+
     const taunt = (mostVotedIds.length > 0 && !isSpyAmongstMostVoted) ? TAUNTS[Math.floor(Math.random() * TAUNTS.length)] : "";
-    io.to(game.spy.socketId).emit('spyGuessPhase', {
-      locations: getAvailableLocations(game.settings.theme).map(l => l.name).slice(0, 25),
-      taunt
-    });
+
+    // ส่งชุดตัวเลือก 25 ให้สปาย
+    io.to(game.spy.socketId).emit('spyGuessPhase', { locations: options25, taunt });
+
+    // แจ้งผู้เล่นอื่นว่ากำลังรอสปายเดา
     game.players.forEach(p => {
       if (p.socketId !== game.spy.socketId) io.to(p.socketId).emit('spyIsGuessing', { spyName: game.spy.name, taunt });
     });
@@ -341,6 +385,9 @@ function endGamePhase(roomCode, resultText) {
   const game = games[roomCode];
   if (!game) return;
   game.state = 'post-round';
+  // เมื่อจบรอบ คุณอาจจะอยากหยุดนาฬิกากลางรอบก็ได้:
+  if (game.timer) { clearInterval(game.timer); game.timer = null; }
+
   io.to(roomCode).emit('roundOver', {
     location: game.currentLocation,
     spyName: game.spy ? game.spy.name : 'ไม่มี',

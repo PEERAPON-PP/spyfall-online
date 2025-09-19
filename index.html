@@ -209,21 +209,22 @@
         });
 
         socket.on('startVote', ({ players, reason }) => {
-            showModal('voting'); voteReason.textContent = reason;
-            votePlayerButtons.innerHTML = '';
-            players.forEach(player => {
-                if (player.id !== socket.playerData.id) {
-                    const button = document.createElement('button');
-                    button.textContent = player.name; button.className = 'btn btn-primary vote-btn w-full mb-2';
-                    button.onclick = () => submitVote(player.id);
-                    votePlayerButtons.appendChild(button);
-                }
-            });
-            abstainVoteBtn.disabled = false;
-            let timeLeft = 120;
-            voteTimerDisplay.textContent = timeLeft;
-            voteTimerInterval = setInterval(() => { timeLeft--; voteTimerDisplay.textContent = timeLeft; if (timeLeft <= 0) clearInterval(voteTimerInterval); }, 1000);
-        });
+    showModal('voting');
+    voteReason.textContent = reason;
+    votePlayerButtons.innerHTML = '';
+
+    players.forEach(player => {
+        // แสดงปุ่มโหวตทุกคน ยกเว้นตัวเราเอง
+        if (!socket.playerData || player.id !== socket.playerData.id) {
+            const button = document.createElement('button');
+            button.textContent = player.name;
+            button.className = 'btn btn-primary vote-btn w-full mb-2';
+            button.onclick = () => submitVote(player.id);
+            votePlayerButtons.appendChild(button);
+        }
+    });
+
+    abstainVoteBtn.disabled = false;
 
         function submitVote(playerId) {
             socket.emit('submitVote', playerId);

@@ -76,7 +76,10 @@ io.on('connection', (socket) => {
     socket.on('startGame', ({ time, rounds, theme }) => {
         if (!currentRoomCode || !games[currentRoomCode]) return;
         const game = games[currentRoomCode];
+        // Ensure the person starting is the host AND there's at least one active player
         if (!game.players.find(p => p.socketId === socket.id && p.isHost)) return;
+        if (game.players.filter(p => !p.disconnected).length < 1) return; // Prevent starting an empty game
+
         game.settings = { time: parseInt(time), rounds: parseInt(rounds), theme };
         startNewRound(currentRoomCode);
     });

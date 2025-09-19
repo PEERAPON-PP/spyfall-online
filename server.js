@@ -16,6 +16,7 @@ const PORT = process.env.PORT || 3000;
 
 // Serve the frontend file
 app.get('/', (req, res) => {
+    // Corrected to serve index.html from the root
     res.sendFile(__dirname + '/index.html');
 });
 
@@ -67,6 +68,10 @@ function generateRoomCode() {
     for (let i = 0; i < 4; i++) {
         code += characters.charAt(Math.floor(Math.random() * characters.length));
     }
+    // Ensure the code is unique
+    if (games[code]) {
+        return generateRoomCode();
+    }
     return code;
 }
 
@@ -88,7 +93,7 @@ io.on('connection', (socket) => {
         };
         socket.join(roomCode);
         socket.emit('roomCreated', { roomCode });
-        io.to(roomCode).emit('updateLobby', games[roomCode].players);
+        io.to(roomCode).emit('updateLobby', {players: games[roomCode].players, hostId: games[roomCode].hostId});
     });
 
     socket.on('joinRoom', ({ roomCode, name }) => {
@@ -96,7 +101,7 @@ io.on('connection', (socket) => {
             games[roomCode].players.push({ id: socket.id, name: name });
             socket.join(roomCode);
             socket.emit('joinSuccess', { roomCode });
-            io.to(roomCode).emit('updateLobby', games[roomCode].players);
+            io.to(roomCode).emit('updateLobby', {players: games[roomCode].players, hostId: games[roomCode].hostId});
         } else {
             socket.emit('joinError', 'ไม่พบห้องหรือเกมเริ่มไปแล้ว');
         }
@@ -104,16 +109,22 @@ io.on('connection', (socket) => {
 
     socket.on('startGame', ({ roomCode }) => {
         const game = games[roomCode];
+        // --- FOR TESTING: Allow starting with 1 player ---
         if (game && game.hostId === socket.id && game.players.length >= 1) {
             game.state = 'playing';
 
-            // Assign spy and location
             const randomLocationIndex = Math.floor(Math.random() * locations.length);
             game.location = locations[randomLocationIndex];
-            const randomSpyIndex = Math.floor(Math.random() * game.players.length);
-            game.spy = game.players[randomSpyIndex].id;
+            
+            // In test mode with 1 player, they are never the spy.
+            if (game.players.length > 1) {
+                const randomSpyIndex = Math.floor(Math.random() * game.players.length);
+                game.spy = game.players[randomSpyIndex].id;
+            } else {
+                game.spy = null; // No spy if only 1 player
+            }
 
-            // Assign roles
+
             const availableRoles = [...game.location.roles];
             game.players.forEach(player => {
                 if (player.id !== game.spy) {
@@ -123,7 +134,6 @@ io.on('connection', (socket) => {
                 }
             });
 
-            // Send roles to each player individually
             game.players.forEach(player => {
                 const isSpy = player.id === game.spy;
                 io.to(player.id).emit('gameStarted', {
@@ -135,15 +145,21 @@ io.on('connection', (socket) => {
                 });
             });
 
-            // Start timer
             let duration = game.timerSetting;
+            io.to(roomCode).emit('timerUpdate', duration); // Send initial time
             game.timerInterval = setInterval(() => {
+                duration--;
                 io.to(roomCode).emit('timerUpdate', duration);
-                if (--duration < 0) {
+                if (duration <= 0) {
                     clearInterval(game.timerInterval);
+                    const spyPlayer = game.players.find(p => p.id === game.spy);
                     io.to(roomCode).emit('gameEnded', { 
-                        spyName: game.players.find(p => p.id === game.spy).name,
-                        locationName: game.location.name
+                        spyName: spyPlayer ? spyPlayer.name : "ไม่มี",
+                        locationName: game.location.name,
+                        roles: game.players.map(p => ({
+                            name: p.name,
+                            role: p.id === game.spy ? 'สายลับ' : game.roles[p.id]
+                        }))
                     });
                 }
             }, 1000);
@@ -154,9 +170,14 @@ io.on('connection', (socket) => {
         const game = games[roomCode];
         if (game && game.hostId === socket.id) {
             clearInterval(game.timerInterval);
+            const spyPlayer = game.players.find(p => p.id === game.spy);
             io.to(roomCode).emit('gameEnded', { 
-                spyName: game.players.find(p => p.id === game.spy).name,
-                locationName: game.location.name
+                spyName: spyPlayer ? spyPlayer.name : "ไม่มี",
+                locationName: game.location.name,
+                roles: game.players.map(p => ({
+                    name: p.name,
+                    role: p.id === game.spy ? 'สายลับ' : game.roles[p.id]
+                }))
             });
         }
     });
@@ -164,38 +185,35 @@ io.on('connection', (socket) => {
     socket.on('playAgain', ({ roomCode }) => {
         const game = games[roomCode];
         if (game && game.hostId === socket.id) {
-            // Reset game state but keep players
             game.state = 'lobby';
             game.spy = null;
             game.location = null;
             game.roles = {};
             clearInterval(game.timerInterval);
             
-            // Send everyone back to the lobby
             io.to(roomCode).emit('returnToLobby');
-            io.to(roomCode).emit('updateLobby', game.players);
+            io.to(roomCode).emit('updateLobby', {players: game.players, hostId: game.hostId});
         }
     });
 
     socket.on('disconnect', () => {
         console.log(`User disconnected: ${socket.id}`);
-        // Find which room the player was in and remove them
         for (const roomCode in games) {
             const game = games[roomCode];
             const playerIndex = game.players.findIndex(p => p.id === socket.id);
-            if (playerIndex !== -1) {
+            if (playerIndex > -1) {
                 game.players.splice(playerIndex, 1);
+                
                 if (game.players.length === 0) {
-                    // If room is empty, delete it
                     clearInterval(game.timerInterval);
                     delete games[roomCode];
+                    console.log(`Room ${roomCode} deleted.`);
                 } else {
-                    // If host disconnected, assign a new host
                     if (game.hostId === socket.id) {
                         game.hostId = game.players[0].id;
+                        console.log(`New host for room ${roomCode} is ${game.hostId}`);
                     }
-                    // Update remaining players
-                    io.to(roomCode).emit('updateLobby', game.players);
+                    io.to(roomCode).emit('updateLobby', {players: game.players, hostId: game.hostId});
                 }
                 break;
             }

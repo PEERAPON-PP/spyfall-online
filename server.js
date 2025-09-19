@@ -193,7 +193,16 @@ function calculateVoteResults(roomCode) {
         game.spy.score++;
         game.state = 'spy-guessing';
         const taunt = (mostVotedIds.length > 0 && !mostVotedIds.includes(spyId)) ? TAUNTS[Math.floor(Math.random() * TAUNTS.length)] : "";
-        io.to(game.spy.socketId).emit('spyGuessPhase', { locations: getAvailableLocations(game.settings.theme).map(l => l.name), taunt });
+        *** Begin Patch
+*** Update File: server.js
+         io.to(game.spy.socketId).emit('spyGuessPhase', { locations: getAvailableLocations(game.settings.theme).map(l => l.name), taunt });
+        // สุ่มสลับและจำกัดจำนวนสถานที่ที่ให้สายลับเห็นไว้ที่ 25 แห่ง
+       let allLocNames = getAvailableLocations(game.settings.theme).map(l => l.name);
+         shuffleArray(allLocNames);
+         const spyLocations = allLocNames.slice(0, 25);
+         io.to(game.spy.socketId).emit('spyGuessPhase', { locations: spyLocations, taunt });
+*** End Patch
+
         game.players.forEach(p => { if (p.socketId !== game.spy.socketId) io.to(p.socketId).emit('spyIsGuessing', { spyName: game.spy.name, taunt }); });
     }
 }

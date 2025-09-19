@@ -276,7 +276,13 @@
             alert(message);
         });
 
-        socket.on('updatePlayerList', (players) => {
+        socket.on('updatePlayerList', (data) => {
+            const players = Array.isArray(data) ? data : data.players;
+            if (!players) {
+                console.error("Invalid player list data received", data);
+                return;
+            }
+
             playerList.innerHTML = '';
             players.forEach((player, index) => {
                 const playerDiv = document.createElement('div');

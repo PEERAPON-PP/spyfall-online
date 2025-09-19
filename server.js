@@ -1,7 +1,6 @@
 const express = require('express');
 const http = require('http');
 const socketIo = require('socket.io');
-const path = require('path');
 
 const app = express();
 const server = http.createServer(app);
@@ -39,13 +38,10 @@ io.on('connection', (socket) => {
         games[roomCode] = {
             players: [],
             state: 'lobby',
-            settings: { 
-                time: 480, 
-                rounds: 5,
-                includeFairytales: true 
-            },
+            settings: { time: 480, rounds: 5, includeFairytales: true },
             currentRound: 0,
             usedLocations: [],
+            votes: {}, // NEW: For voting system
         };
 
         const hostPlayer = { id: socket.id, name: playerName, isHost: true, score: 0 };
@@ -84,6 +80,33 @@ io.on('connection', (socket) => {
         game.settings.includeFairytales = includeFairytales;
         game.state = 'playing';
         startNewRound(currentRoomCode);
+    });
+
+    // NEW FEATURE: Host manually ends the round
+    socket.on('hostEndRound', () => {
+        if (!currentRoomCode || !games[currentRoomCode]) return;
+        const game = games[currentRoomCode];
+        const player = game.players.find(p => p.id === socket.id);
+        if (player && player.isHost && game.state === 'playing') {
+            endRound(currentRoomCode, "host_ended");
+        }
+    });
+
+    // NEW FEATURE: Player submits a vote
+    socket.on('submitVote', (votedPlayerId) => {
+        if (!currentRoomCode || !games[currentRoomCode]) return;
+        const game = games[currentRoomCode];
+        if (game.state !== 'voting') return;
+
+        game.votes[socket.id] = votedPlayerId;
+        
+        const totalPlayers = game.players.length;
+        const totalVotes = Object.keys(game.votes).length;
+
+        // Check if everyone has voted
+        if (totalVotes === totalPlayers) {
+            calculateVoteResultsAndEndRound(currentRoomCode);
+        }
     });
     
     socket.on('requestNextRound', () => {
@@ -154,26 +177,24 @@ function startNewRound(roomCode) {
     if (!game) return;
     game.currentRound++;
     
-    // Select a location based on settings
     let availableLocations = locationsData;
     if (!game.settings.includeFairytales) {
         availableLocations = locationsData.filter(loc => loc.category !== 'fairytale');
     }
     
     if (game.usedLocations.length >= availableLocations.length) {
-        game.usedLocations = []; // Reset if all available locations have been used
+        game.usedLocations = []; 
     }
     let locationPool = availableLocations.filter(loc => !game.usedLocations.includes(loc.name));
     if (locationPool.length === 0) {
-        // This can happen if only fairytale is selected and all are used up. Reset for this category.
         game.usedLocations = [];
         locationPool = availableLocations;
     }
     const location = locationPool[Math.floor(Math.random() * locationPool.length)];
     game.usedLocations.push(location.name);
     game.currentLocation = location.name;
+    game.votes = {}; // Reset votes for the new round
     
-    // Assign roles
     const playersInRoom = game.players;
     shuffleArray(playersInRoom);
     const spyIndex = Math.floor(Math.random() * playersInRoom.length);
@@ -198,12 +219,12 @@ function startNewRound(roomCode) {
                 role: assignedRole,
                 round: game.currentRound,
                 totalRounds: game.settings.rounds,
+                isHost: player.isHost
             });
             socket.emit('allLocations', allLocationsForSpy);
         }
     });
     
-    // Start timer
     if (game.timer) clearInterval(game.timer);
     let timeLeft = game.settings.time;
     io.to(roomCode).emit('timerUpdate', timeLeft);
@@ -211,7 +232,7 @@ function startNewRound(roomCode) {
         timeLeft--;
         io.to(roomCode).emit('timerUpdate', timeLeft);
         if (timeLeft <= 0) {
-            endRound(roomCode, "spy_escaped");
+            endRound(roomCode, "timer_end");
         }
     }, 1000);
 }
@@ -219,16 +240,59 @@ function startNewRound(roomCode) {
 function endRound(roomCode, reason) {
     const game = games[roomCode];
     if (!game || game.state !== 'playing') return;
+    
     clearInterval(game.timer);
-    game.state = 'post-round';
+    game.state = 'voting'; // Change state to voting
 
+    let voteReason = "";
+    if (reason === "timer_end") voteReason = "หมดเวลา! โหวตหาตัวสายลับ";
+    if (reason === "host_ended") voteReason = "หัวหน้าห้องสั่งจบรอบ! โหวตหาตัวสายลับ";
+
+    io.to(roomCode).emit('startVote', {
+        players: game.players.map(p => ({ id: p.id, name: p.name })),
+        reason: voteReason
+    });
+}
+
+function calculateVoteResultsAndEndRound(roomCode) {
+    const game = games[roomCode];
+    if (!game || game.state !== 'voting') return;
+
+    const voteCounts = {};
+    for (const voterId in game.votes) {
+        const votedId = game.votes[voterId];
+        if (votedId) { // Skip abstain votes
+            voteCounts[votedId] = (voteCounts[votedId] || 0) + 1;
+        }
+    }
+
+    let maxVotes = 0;
+    let votedPlayerId = null;
+    for (const playerId in voteCounts) {
+        if (voteCounts[playerId] > maxVotes) {
+            maxVotes = voteCounts[playerId];
+            votedPlayerId = playerId;
+        }
+    }
+    
+    const spyId = game.spy ? game.spy.id : null;
     let resultText = "";
-    if (reason === "spy_escaped") {
-        resultText = "หมดเวลา! สายลับหนีไปได้\nสายลับได้รับ 2 คะแนน";
+
+    const votedPlayer = game.players.find(p => p.id === votedPlayerId);
+    const votedPlayerName = votedPlayer ? votedPlayer.name : "ไม่มีใคร";
+
+    if (votedPlayerId === spyId) {
+        resultText = `ถูกต้อง! ${votedPlayerName} คือสายลับ!\nผู้เล่นทุกคน (ยกเว้นสายลับ) ได้รับ 1 คะแนน`;
+        game.players.forEach(p => {
+            if (p.id !== spyId) p.score = (p.score || 0) + 1;
+        });
+    } else {
+        resultText = `โหวตผิดคน! ${votedPlayerName} ไม่ใช่สายลับ\nสายลับได้รับ 2 คะแนน`;
         if(game.spy) game.spy.score = (game.spy.score || 0) + 2;
     }
 
-    io.to(roomCode).emit('gameOver', {
+    game.state = 'post-round';
+    io.to(roomCode).emit('roundOver', {
         location: game.currentLocation,
         spyName: game.spy ? game.spy.name : 'ไม่มี',
         resultText: resultText,
@@ -239,7 +303,4 @@ function endRound(roomCode, reason) {
 }
 
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => {
-    console.log(`Server is running on port ${PORT}`);
-});
-
+server.listen(PORT, () => console.log(`Server is running on port ${PORT}`));

@@ -63,8 +63,6 @@
                  <div><label for="theme-select" class="block text-sm font-medium mb-2">ธีมสถานที่:</label><select id="theme-select" class="input-field w-full"><option value="all">ทั้งหมด</option><option value="default">สถานที่ทั่วไป</option><option value="fairytale">นิทานเท่านั้น</option></select></div>
             </div>
             <button id="start-game-btn" class="btn btn-primary w-full hidden mt-6">เริ่มเกม</button>
-            <button id="test-start-btn" class="btn btn-secondary w-full hidden mt-4">เริ่มทดสอบ (1-2 คน)</button>
-            <p id="start-game-error" class="text-center text-red-500 mt-2 text-sm"></p>
         </div>
 
         <div id="game-screen" class="hidden card">
@@ -93,7 +91,7 @@
         const screens = { home: $('home-screen'), lobby: $('lobby-screen'), game: $('game-screen') };
         const modals = { locations: $('locations-modal'), voting: $('voting-modal'), spyGuess: $('spy-guess-modal'), waitingForSpy: $('waiting-for-spy-modal'), endRound: $('end-round-modal') };
         const playerNameInput = $('player-name-input'), nameError = $('name-error'), createRoomBtn = $('create-room-btn'), roomCodeInput = $('room-code-input'), joinRoomBtn = $('join-room-btn'), rejoinPrompt = $('rejoin-prompt'), rejoinBtn = $('rejoin-btn');
-        const lobbyRoomCode = $('lobby-room-code'), copyCodeBtn = $('copy-code-btn'), playerList = $('player-list'), startGameBtn = $('start-game-btn'), startGameError = $('start-game-error'), gameSettings = $('game-settings'), timerSelect = $('timer-select'), roundsSelect = $('rounds-select'), themeSelect = $('theme-select'), testStartBtn = $('test-start-btn'), lobbyMessage = $('lobby-message');
+        const lobbyRoomCode = $('lobby-room-code'), copyCodeBtn = $('copy-code-btn'), playerList = $('player-list'), startGameBtn = $('start-game-btn'), gameSettings = $('game-settings'), timerSelect = $('timer-select'), roundsSelect = $('rounds-select'), themeSelect = $('theme-select'), lobbyMessage = $('lobby-message');
         const timerDisplay = $('timer'), locationDisplay = $('location-display'), roleDisplay = $('role-display'), spyActions = $('spy-actions'), showLocationsBtn = $('show-locations-btn'), currentRoundSpan = $('current-round'), totalRoundsSpan = $('total-rounds'), inGameScoreboard = $('in-game-scoreboard'), hostEndRoundBtn = $('host-end-round-btn');
         const locationsList = $('locations-list'), closeLocationsBtn = $('close-locations-btn'), voteReason = $('vote-reason'), voteTimerDisplay = $('vote-timer'), votePlayerButtons = $('vote-player-buttons'), abstainVoteBtn = $('abstain-vote-btn');
         const spyLocationGuess = $('spy-location-guess'), confirmSpyGuessBtn = $('confirm-spy-guess-btn'), waitingSpyName = $('waiting-spy-name'), spyGuessTaunt = $('spy-guess-taunt'), waitingTaunt = $('waiting-taunt');
@@ -166,7 +164,6 @@
         copyCodeBtn.addEventListener('click', () => { navigator.clipboard.writeText(lobbyRoomCode.textContent).then(() => { copyCodeBtn.textContent = 'คัดลอกแล้ว!'; setTimeout(() => copyCodeBtn.textContent = 'คัดลอก', 2000); }); });
         const emitStartGame = () => socket.emit('startGame', { time: timerSelect.value, rounds: roundsSelect.value, theme: themeSelect.value });
         startGameBtn.addEventListener('click', emitStartGame);
-        testStartBtn.addEventListener('click', emitStartGame);
         hostEndRoundBtn.addEventListener('click', () => socket.emit('hostEndRound'));
         abstainVoteBtn.addEventListener('click', () => submitVote(null));
         nextRoundBtn.addEventListener('click', () => { socket.emit('requestNextRound'); showModal(null); });
@@ -211,12 +208,14 @@
             if (isHost) {
                 gameSettings.classList.remove('hidden');
                 const activePlayers = players.filter(p => !p.disconnected).length;
-                const canStart = activePlayers >= 3;
+                // Allow starting with 1 or more players
+                const canStart = activePlayers >= 1;
                 startGameBtn.classList.remove('hidden');
                 startGameBtn.disabled = !canStart;
-                testStartBtn.classList.toggle('hidden', canStart);
-                startGameError.textContent = canStart ? '' : 'ต้องมีผู้เล่นอย่างน้อย 3 คน';
-            } else { gameSettings.classList.add('hidden'); startGameBtn.classList.add('hidden'); testStartBtn.classList.add('hidden'); }
+            } else {
+                gameSettings.classList.add('hidden');
+                startGameBtn.classList.add('hidden');
+            }
         });
 
         socket.on('gameStarted', ({ location, role, round, totalRounds, isHost: isPlayerHost, players }) => {

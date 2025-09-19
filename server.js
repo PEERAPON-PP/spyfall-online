@@ -33,7 +33,7 @@ io.on('connection', (socket) => {
     socket.on('createRoom', ({ playerName, playerToken }) => {
         const roomCode = generateRoomCode();
         currentRoomCode = roomCode;
-        games[roomCode] = { players: [], state: 'lobby', settings: { time: 300, rounds: 5, theme: 'all' }, currentRound: 0, usedLocations: [] };
+        games[roomCode] = { players: [], state: 'lobby', settings: { time: 300, rounds: 5, theme: 'all', voteTime: 120 }, currentRound: 0, usedLocations: [] };
         const player = { id: uuidv4(), socketId: socket.id, name: playerName, isHost: true, score: 0, token: playerToken, isSpectator: false, disconnected: false };
         games[roomCode].players.push(player);
         playerSessions[playerToken] = { roomCode, playerId: player.id };
@@ -47,14 +47,12 @@ io.on('connection', (socket) => {
         const game = games[roomCodeUpper];
         if (!game) return socket.emit('error', 'ไม่พบห้องนี้');
 
-        // Handle joining a game in progress
         if (game.state !== 'lobby') {
             const disconnectedPlayers = game.players.filter(p => p.disconnected);
             socket.emit('promptRejoinOrSpectate', { disconnectedPlayers, roomCode: roomCodeUpper });
             return;
         }
 
-        // Standard join to a lobby
         currentRoomCode = roomCodeUpper;
         const player = { id: uuidv4(), socketId: socket.id, name: playerName, isHost: false, score: 0, token: playerToken, isSpectator: false, disconnected: false };
         game.players.push(player);
@@ -64,7 +62,6 @@ io.on('connection', (socket) => {
         io.to(roomCodeUpper).emit('updatePlayerList', game.players);
     });
     
-    // NEW: Handle rejoining by selecting a name from the prompt
     socket.on('rejoinAsPlayer', ({ roomCode, playerId, playerToken }) => {
         const game = games[roomCode];
         if (!game) return socket.emit('error', 'ไม่พบห้องขณะพยายามเข้าร่วมอีกครั้ง');
@@ -73,7 +70,7 @@ io.on('connection', (socket) => {
         if (player && player.disconnected) {
             player.socketId = socket.id;
             player.disconnected = false;
-            player.token = playerToken; // Update token in case user is on a new device/browser
+            player.token = playerToken;
             currentRoomCode = roomCode;
 
             playerSessions[playerToken] = { roomCode, playerId: player.id };
@@ -87,7 +84,6 @@ io.on('connection', (socket) => {
         }
     });
 
-    // NEW: Handle joining a game in progress as a spectator
     socket.on('joinAsSpectator', ({ roomCode, playerName, playerToken }) => {
         const game = games[roomCode];
         if (!game) return socket.emit('error', 'ไม่พบห้อง');
@@ -102,12 +98,12 @@ io.on('connection', (socket) => {
         io.to(roomCode).emit('updatePlayerList', game.players);
     });
 
-    socket.on('startGame', ({ time, rounds, theme }) => {
+    socket.on('startGame', ({ time, rounds, theme, voteTime }) => {
         if (!currentRoomCode || !games[currentRoomCode]) return;
         const game = games[currentRoomCode];
         if (!game.players.find(p => p.socketId === socket.id && p.isHost)) return;
         if (game.players.filter(p => !p.disconnected).length < 1) return;
-        game.settings = { time: parseInt(time), rounds: parseInt(rounds), theme };
+        game.settings = { time: parseInt(time), rounds: parseInt(rounds), theme, voteTime: parseInt(voteTime) || 120 };
         startNewRound(currentRoomCode);
     });
 
@@ -201,7 +197,6 @@ function startNewRound(roomCode) {
     clearTimers(game);
     game.state = 'playing'; game.currentRound++; game.votes = {}; game.revoteCandidates = [];
     
-    // NEW: Transition spectators to active players
     game.players.forEach(p => {
         if (p.isSpectator) p.isSpectator = false;
     });
@@ -242,14 +237,16 @@ function endRound(roomCode, reason) {
     game.state = 'voting';
     const voteReason = reason === 'timer_end' ? 'หมดเวลา! โหวตหาตัวสายลับ' : 'หัวหน้าห้องสั่งจบรอบ!';
     const activePlayers = game.players.filter(p => !p.disconnected && !p.isSpectator);
+    const voteTime = game.settings.voteTime || 120;
+
     activePlayers.forEach(voter => {
         const voteOptions = activePlayers.filter(option => option.id !== voter.id);
         const socket = io.sockets.sockets.get(voter.socketId);
         if (socket) {
-            socket.emit('startVote', { players: voteOptions, reason: voteReason });
+            socket.emit('startVote', { players: voteOptions, reason: voteReason, voteTime });
         }
     });
-    game.voteTimer = setTimeout(() => calculateVoteResults(roomCode), 120000);
+    game.voteTimer = setTimeout(() => calculateVoteResults(roomCode), voteTime * 1000);
 }
 
 function startReVote(roomCode, candidateIds) {
@@ -257,21 +254,22 @@ function startReVote(roomCode, candidateIds) {
     if (!game) return;
 
     game.state = 'revoting';
-    game.votes = {}; // Reset votes for the re-vote
+    game.votes = {}; 
     game.revoteCandidates = game.players.filter(p => candidateIds.includes(p.id));
 
     const voteReason = "ผลโหวตเสมอ! โหวตอีกครั้งเฉพาะผู้ที่มีคะแนนสูงสุด";
     const activePlayers = game.players.filter(p => !p.disconnected && !p.isSpectator);
+    const voteTime = game.settings.voteTime || 120;
 
     activePlayers.forEach(voter => {
         const voteOptions = game.revoteCandidates.filter(option => option.id !== voter.id);
         const socket = io.sockets.sockets.get(voter.socketId);
         if (socket) {
-            socket.emit('startVote', { players: voteOptions, reason: voteReason });
+            socket.emit('startVote', { players: voteOptions, reason: voteReason, voteTime });
         }
     });
     
-    game.voteTimer = setTimeout(() => calculateVoteResults(roomCode), 120000);
+    game.voteTimer = setTimeout(() => calculateVoteResults(roomCode), voteTime * 1000);
 }
 
 function calculateVoteResults(roomCode) {
@@ -307,14 +305,14 @@ function calculateVoteResults(roomCode) {
         } else {
             spyEscapes(roomCode, "โหวตผิดคน!");
         }
-    } else if (mostVotedIds.length > 1) { // Tie condition
+    } else if (mostVotedIds.length > 1) {
         const spyIsInTie = mostVotedIds.includes(spyId);
         if (game.state === 'voting' && spyIsInTie) {
             startReVote(roomCode, mostVotedIds);
         } else {
             spyEscapes(roomCode, "โหวตไม่เป็นเอกฉันท์!");
         }
-    } else { // No votes cast
+    } else {
         spyEscapes(roomCode, "ไม่มีใครถูกโหวตเลย!");
     }
 }
@@ -355,3 +353,4 @@ function endGamePhase(roomCode, resultText) {
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => console.log(`Server is running on port ${PORT}`));
+

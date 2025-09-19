@@ -104,7 +104,7 @@ io.on('connection', (socket) => {
 
     socket.on('startGame', ({ roomCode }) => {
         const game = games[roomCode];
-        if (game && game.hostId === socket.id && game.players.length >= 3) {
+        if (game && game.hostId === socket.id && game.players.length >= 1) {
             game.state = 'playing';
 
             // Assign spy and location

@@ -1,16 +1,18 @@
 {
-  "name": "spyfall-online-game",
+  "name": "spyfall-online",
   "version": "1.0.0",
-  "description": "A multiplayer Spyfall game running on Node.js",
+  "description": "",
   "main": "server.js",
   "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
     "start": "node server.js"
   },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
   "dependencies": {
     "express": "^4.19.2",
-    "socket.io": "^4.7.5"
-  },
-  "engines": {
-    "node": ">=18.0.0"
+    "socket.io": "^4.7.5",
+    "uuid": "^9.0.1"
   }
 }

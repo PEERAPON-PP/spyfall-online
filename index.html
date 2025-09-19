@@ -262,14 +262,14 @@
 
         // --- Socket.IO Handlers ---
 
-        socket.on('roomCreated', (roomCode) => {
+        socket.on('roomCreated', (data) => {
             showScreen('lobby');
-            lobbyRoomCode.textContent = roomCode;
+            lobbyRoomCode.textContent = data.roomCode;
         });
 
-        socket.on('joinSuccess', (roomCode) => {
+        socket.on('joinSuccess', (data) => {
             showScreen('lobby');
-            lobbyRoomCode.textContent = roomCode;
+            lobbyRoomCode.textContent = data.roomCode;
         });
         
         socket.on('error', (message) => {

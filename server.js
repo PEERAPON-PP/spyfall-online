@@ -20,7 +20,6 @@ const TAUNTS = ["ว้าย! โหวตผิดเพราะไม่ส�
 // Helper Functions
 function generateRoomCode() { let code; do { code = Math.random().toString(36).substring(2, 6).toUpperCase(); } while (games[code]); return code; }
 function shuffleArray(array) { for (let i = array.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [array[i], array[j]] = [array[j], array[i]]; } }
-// FIX: Use clearTimeout for the game loop timer
 function clearTimers(game) {
     if (game.timer) clearTimeout(game.timer);
     if (game.voteTimer) clearTimeout(game.voteTimer);
@@ -31,28 +30,11 @@ function clearTimers(game) {
 io.on('connection', (socket) => {
     let currentRoomCode = null;
 
-    socket.on('rejoinGame', (playerToken) => {
-        const session = playerSessions[playerToken];
-        if (session && games[session.roomCode]) {
-            const game = games[session.roomCode];
-            const player = game.players.find(p => p.id === session.playerId);
-            if (player && player.disconnected) {
-                player.socketId = socket.id;
-                player.disconnected = false;
-                currentRoomCode = session.roomCode;
-                socket.join(currentRoomCode);
-                socket.emit('rejoinSuccess', { game, roomCode: currentRoomCode, self: player });
-                io.to(currentRoomCode).emit('playerReconnected', player.name);
-                io.to(currentRoomCode).emit('updatePlayerList', game.players);
-            }
-        }
-    });
-
     socket.on('createRoom', ({ playerName, playerToken }) => {
         const roomCode = generateRoomCode();
         currentRoomCode = roomCode;
         games[roomCode] = { players: [], state: 'lobby', settings: { time: 300, rounds: 5, theme: 'all' }, currentRound: 0, usedLocations: [] };
-        const player = { id: uuidv4(), socketId: socket.id, name: playerName, isHost: true, score: 0, token: playerToken };
+        const player = { id: uuidv4(), socketId: socket.id, name: playerName, isHost: true, score: 0, token: playerToken, isSpectator: false, disconnected: false };
         games[roomCode].players.push(player);
         playerSessions[playerToken] = { roomCode, playerId: player.id };
         socket.join(roomCode);
@@ -62,30 +44,89 @@ io.on('connection', (socket) => {
 
     socket.on('joinRoom', ({ playerName, roomCode, playerToken }) => {
         const roomCodeUpper = roomCode.toUpperCase();
-        if (!games[roomCodeUpper]) return socket.emit('error', 'ไม่พบห้องนี้');
-        if (games[roomCodeUpper].state !== 'lobby') return socket.emit('error', 'เกมเริ่มไปแล้ว');
+        const game = games[roomCodeUpper];
+        if (!game) return socket.emit('error', 'ไม่พบห้องนี้');
+
+        // Handle joining a game in progress
+        if (game.state !== 'lobby') {
+            const disconnectedPlayers = game.players.filter(p => p.disconnected);
+            socket.emit('promptRejoinOrSpectate', { disconnectedPlayers, roomCode: roomCodeUpper });
+            return;
+        }
+
+        // Standard join to a lobby
         currentRoomCode = roomCodeUpper;
-        const player = { id: uuidv4(), socketId: socket.id, name: playerName, isHost: false, score: 0, token: playerToken };
-        games[roomCodeUpper].players.push(player);
+        const player = { id: uuidv4(), socketId: socket.id, name: playerName, isHost: false, score: 0, token: playerToken, isSpectator: false, disconnected: false };
+        game.players.push(player);
         playerSessions[playerToken] = { roomCode: roomCodeUpper, playerId: player.id };
         socket.join(roomCodeUpper);
         socket.emit('joinSuccess', { roomCode: roomCodeUpper });
-        io.to(roomCodeUpper).emit('updatePlayerList', games[roomCodeUpper].players);
+        io.to(roomCodeUpper).emit('updatePlayerList', game.players);
     });
     
+    // NEW: Handle rejoining by selecting a name from the prompt
+    socket.on('rejoinAsPlayer', ({ roomCode, playerId, playerToken }) => {
+        const game = games[roomCode];
+        if (!game) return socket.emit('error', 'ไม่พบห้องขณะพยายามเข้าร่วมอีกครั้ง');
+
+        const player = game.players.find(p => p.id === playerId);
+        if (player && player.disconnected) {
+            player.socketId = socket.id;
+            player.disconnected = false;
+            player.token = playerToken; // Update token in case user is on a new device/browser
+            currentRoomCode = roomCode;
+
+            playerSessions[playerToken] = { roomCode, playerId: player.id };
+            
+            socket.join(currentRoomCode);
+            socket.emit('rejoinSuccess', { game, roomCode: currentRoomCode, self: player });
+            io.to(currentRoomCode).emit('playerReconnected', player.name);
+            io.to(currentRoomCode).emit('updatePlayerList', game.players);
+        } else {
+            socket.emit('error', 'ไม่สามารถเข้าร่วมในฐานะผู้เล่นคนนี้ได้ (อาจมีคนอื่นเลือกไปแล้ว)');
+        }
+    });
+
+    // NEW: Handle joining a game in progress as a spectator
+    socket.on('joinAsSpectator', ({ roomCode, playerName, playerToken }) => {
+        const game = games[roomCode];
+        if (!game) return socket.emit('error', 'ไม่พบห้อง');
+        
+        currentRoomCode = roomCode;
+        const player = { id: uuidv4(), socketId: socket.id, name: playerName, isHost: false, score: 0, token: playerToken, isSpectator: true, disconnected: false };
+        game.players.push(player);
+        playerSessions[playerToken] = { roomCode, playerId: player.id };
+        
+        socket.join(roomCode);
+        socket.emit('joinSuccessAsSpectator', { roomCode });
+        io.to(roomCode).emit('updatePlayerList', game.players);
+    });
+
     socket.on('startGame', ({ time, rounds, theme }) => {
         if (!currentRoomCode || !games[currentRoomCode]) return;
         const game = games[currentRoomCode];
-        // Ensure the person starting is the host AND there's at least one active player
         if (!game.players.find(p => p.socketId === socket.id && p.isHost)) return;
-        if (game.players.filter(p => !p.disconnected).length < 1) return; // Prevent starting an empty game
-
+        if (game.players.filter(p => !p.disconnected).length < 1) return;
         game.settings = { time: parseInt(time), rounds: parseInt(rounds), theme };
         startNewRound(currentRoomCode);
     });
 
     socket.on('hostEndRound', () => { if (currentRoomCode && games[currentRoomCode]) { const game = games[currentRoomCode]; const p = game.players.find(pl => pl.socketId === socket.id); if (p && p.isHost && game.state === 'playing') endRound(currentRoomCode, "host_ended"); } });
-    socket.on('submitVote', (votedPlayerId) => { if (currentRoomCode && games[currentRoomCode]) { const game = games[currentRoomCode]; if (['voting', 'revoting'].includes(game.state)) { game.votes[socket.id] = votedPlayerId; const playersToVote = game.state === 'revoting' ? game.revoteCandidates : game.players; if (Object.keys(game.votes).length === playersToVote.filter(p => !p.disconnected).length) { clearTimeout(game.voteTimer); calculateVoteResults(currentRoomCode); } } } });
+    
+    socket.on('submitVote', (votedPlayerId) => {
+        if (currentRoomCode && games[currentRoomCode]) {
+            const game = games[currentRoomCode];
+            if (['voting', 'revoting'].includes(game.state)) {
+                game.votes[socket.id] = votedPlayerId;
+                const activePlayers = game.players.filter(p => !p.disconnected);
+                if (Object.keys(game.votes).length === activePlayers.length) {
+                    clearTimeout(game.voteTimer);
+                    calculateVoteResults(currentRoomCode);
+                }
+            }
+        }
+    });
+
     socket.on('spyGuessLocation', (guessedLocation) => { if (currentRoomCode && games[currentRoomCode]) { const game = games[currentRoomCode]; if (game.state === 'spy-guessing' && socket.id === game.spy.socketId) { let resultText; if (guessedLocation === game.currentLocation) { game.spy.score++; resultText = `สายลับหนีรอด และตอบสถานที่ถูกต้อง!\nสายลับได้รับเพิ่มอีก 1 คะแนน! (รวมเป็น 2)`; } else { resultText = `สายลับหนีรอด! แต่ตอบสถานที่ผิด\nสายลับได้รับ 1 คะแนน`; } endGamePhase(currentRoomCode, resultText); } } });
     socket.on('requestNextRound', () => { if (currentRoomCode && games[currentRoomCode]) { const game = games[currentRoomCode]; if (game.players.find(p => p.socketId === socket.id && p.isHost) && game.currentRound < game.settings.rounds) startNewRound(currentRoomCode); } });
     socket.on('resetGame', () => { if (currentRoomCode && games[currentRoomCode]) { const game = games[currentRoomCode]; if (game.players.find(p => p.socketId === socket.id && p.isHost)) { game.state = 'lobby'; game.currentRound = 0; game.usedLocations = []; game.players.forEach(p => p.score = 0); clearTimers(game); io.to(currentRoomCode).emit('returnToLobby'); io.to(currentRoomCode).emit('updatePlayerList', game.players); } } });
@@ -137,21 +178,14 @@ io.on('connection', (socket) => {
     });
 });
 
-// FIX: Create a robust game loop function with setTimeout
 function gameLoop(roomCode) {
     const game = games[roomCode];
-    // Stop the loop if the game state is no longer 'playing'
-    if (!game || game.state !== 'playing') {
-        return;
-    }
-
+    if (!game || game.state !== 'playing') return;
     game.timeLeft--;
     io.to(roomCode).emit('timerUpdate', { timeLeft: Math.max(0, game.timeLeft), players: game.players });
-
     if (game.timeLeft <= 0) {
         endRound(roomCode, "timer_end");
     } else {
-        // Schedule the next tick
         game.timer = setTimeout(() => gameLoop(roomCode), 1000);
     }
 }
@@ -166,6 +200,12 @@ function startNewRound(roomCode) {
     const game = games[roomCode]; if (!game) return;
     clearTimers(game);
     game.state = 'playing'; game.currentRound++; game.votes = {}; game.revoteCandidates = [];
+    
+    // NEW: Transition spectators to active players
+    game.players.forEach(p => {
+        if (p.isSpectator) p.isSpectator = false;
+    });
+
     const availableLocations = getAvailableLocations(game.settings.theme);
     if (game.usedLocations.length >= availableLocations.length) game.usedLocations = []; 
     let locationPool = availableLocations.filter(loc => !game.usedLocations.includes(loc.name));
@@ -190,24 +230,18 @@ function startNewRound(roomCode) {
             }
         }
     });
-
-    // FIX: Replace setInterval with the new gameLoop logic
     game.timeLeft = game.settings.time;
     io.to(roomCode).emit('timerUpdate', { timeLeft: game.timeLeft, players: game.players });
-    // Start the game loop
     game.timer = setTimeout(() => gameLoop(roomCode), 1000);
 }
 
 function endRound(roomCode, reason) {
     const game = games[roomCode];
     if (!game || game.state !== 'playing') return;
-
     clearTimers(game);
     game.state = 'voting';
-
     const voteReason = reason === 'timer_end' ? 'หมดเวลา! โหวตหาตัวสายลับ' : 'หัวหน้าห้องสั่งจบรอบ!';
-    
-    const activePlayers = game.players.filter(p => !p.disconnected);
+    const activePlayers = game.players.filter(p => !p.disconnected && !p.isSpectator);
     activePlayers.forEach(voter => {
         const voteOptions = activePlayers.filter(option => option.id !== voter.id);
         const socket = io.sockets.sockets.get(voter.socketId);
@@ -215,8 +249,29 @@ function endRound(roomCode, reason) {
             socket.emit('startVote', { players: voteOptions, reason: voteReason });
         }
     });
+    game.voteTimer = setTimeout(() => calculateVoteResults(roomCode), 120000);
+}
+
+function startReVote(roomCode, candidateIds) {
+    const game = games[roomCode];
+    if (!game) return;
+
+    game.state = 'revoting';
+    game.votes = {}; // Reset votes for the re-vote
+    game.revoteCandidates = game.players.filter(p => candidateIds.includes(p.id));
+
+    const voteReason = "ผลโหวตเสมอ! โหวตอีกครั้งเฉพาะผู้ที่มีคะแนนสูงสุด";
+    const activePlayers = game.players.filter(p => !p.disconnected && !p.isSpectator);
+
+    activePlayers.forEach(voter => {
+        const voteOptions = game.revoteCandidates.filter(option => option.id !== voter.id);
+        const socket = io.sockets.sockets.get(voter.socketId);
+        if (socket) {
+            socket.emit('startVote', { players: voteOptions, reason: voteReason });
+        }
+    });
     
-    game.voteTimer = setTimeout(() => calculateVoteResults(roomCode), 120000); // 2 minutes
+    game.voteTimer = setTimeout(() => calculateVoteResults(roomCode), 120000);
 }
 
 function calculateVoteResults(roomCode) {
@@ -252,13 +307,21 @@ function calculateVoteResults(roomCode) {
         } else {
             spyEscapes(roomCode, "โหวตผิดคน!");
         }
-    } else {
-        spyEscapes(roomCode, "โหวตไม่เป็นเอกฉันท์!");
+    } else if (mostVotedIds.length > 1) { // Tie condition
+        const spyIsInTie = mostVotedIds.includes(spyId);
+        if (game.state === 'voting' && spyIsInTie) {
+            startReVote(roomCode, mostVotedIds);
+        } else {
+            spyEscapes(roomCode, "โหวตไม่เป็นเอกฉันท์!");
+        }
+    } else { // No votes cast
+        spyEscapes(roomCode, "ไม่มีใครถูกโหวตเลย!");
     }
 }
 
 function spyEscapes(roomCode, reason) {
     const game = games[roomCode];
+    if (!game) return;
     game.spy.score++;
     game.state = 'spy-guessing';
 
@@ -292,4 +355,3 @@ function endGamePhase(roomCode, resultText) {
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => console.log(`Server is running on port ${PORT}`));
-

@@ -126,8 +126,44 @@
         function generateToken() { return ([1e7]+-1e3+-4e3+-8e3+-1e11).replace(/[018]/g, c => (c ^ crypto.getRandomValues(new Uint8Array(1))[0] & 15 >> c / 4).toString(16)); }
 
         // --- Event Listeners ---
-        createRoomBtn.addEventListener('click', () => { const n = playerNameInput.value.trim(); if (!n) return nameError.classList.remove('hidden'); nameError.classList.add('hidden'); socket.emit('createRoom', { playerName: n, playerToken }); });
-        joinRoomBtn.addEventListener('click', () => { const n = playerNameInput.value.trim(); const c = roomCodeInput.value.trim().toUpperCase(); if (!n) return nameError.classList.remove('hidden'); if (!c) return; nameError.classList.add('hidden'); socket.emit('joinRoom', { playerName: n, roomCode: c, playerToken }); });
+        // --- Event Listeners ---
+// สร้างห้อง
+createRoomBtn.addEventListener('click', () => {
+    const n = playerNameInput.value.trim();
+    if (!n) {
+        // แสดงข้อผิดพลาดถ้าไม่กรอกชื่อ
+        nameError.classList.remove('hidden');
+        return;
+    }
+    // ซ่อนข้อความ error เมื่อชื่อถูกต้องแล้ว
+    nameError.classList.add('hidden');
+    // ถ้า playerToken ยังไม่มี ให้สร้างและบันทึกไว้
+    if (!playerToken) {
+        playerToken = generateToken();
+        localStorage.setItem('playerToken', playerToken);
+    }
+    socket.emit('createRoom', { playerName: n, playerToken });
+});
+
+// เข้าร่วมโดยใช้รหัสห้อง
+joinRoomBtn.addEventListener('click', () => {
+    const n = playerNameInput.value.trim();
+    const c = roomCodeInput.value.trim().toUpperCase();
+    if (!n) {
+        nameError.classList.remove('hidden');
+        return;
+    }
+    // ซ่อนข้อความ error เมื่อชื่อถูกต้องแล้ว
+    nameError.classList.add('hidden');
+    if (!c) return; // ถ้าไม่กรอกรหัสห้องก็ออกเลย
+    // หากยังไม่มี playerToken ให้สร้างและบันทึกไว้
+    if (!playerToken) {
+        playerToken = generateToken();
+        localStorage.setItem('playerToken', playerToken);
+    }
+    socket.emit('joinRoom', { playerName: n, roomCode: c, playerToken });
+});
+
         copyCodeBtn.addEventListener('click', () => { navigator.clipboard.writeText(lobbyRoomCode.textContent).then(() => { copyCodeBtn.textContent = 'คัดลอกแล้ว!'; setTimeout(() => copyCodeBtn.textContent = 'คัดลอก', 2000); }); });
         const emitStartGame = () => socket.emit('startGame', { time: timerSelect.value, rounds: roundsSelect.value, theme: themeSelect.value });
         startGameBtn.addEventListener('click', emitStartGame);

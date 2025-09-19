@@ -1,15 +1,19 @@
 const express = require('express');
 const http = require('http');
 const socketIo = require('socket.io');
-const locationsData = require('./locations.json'); // Assuming you have a locations.json file
+const path = require('path'); // Import the 'path' module
 
 const app = express();
 const server = http.createServer(app);
 const io = socketIo(server);
 
-const games = {};
+const locationsData = require('./locations.json');
 
-app.use(express.static('public')); // Serve your index.html from a 'public' folder
+// Serve static files from the root directory
+// This line is changed to serve index.html correctly
+app.use(express.static(__dirname));
+
+const games = {};
 
 // Helper Functions
 function generateRoomCode() {
@@ -56,27 +60,28 @@ io.on('connection', (socket) => {
     });
 
     socket.on('joinRoom', ({ playerName, roomCode }) => {
-        if (!games[roomCode]) {
+        const roomCodeUpper = roomCode.toUpperCase();
+        if (!games[roomCodeUpper]) {
             socket.emit('error', 'ไม่พบห้องนี้');
             return;
         }
-        if (games[roomCode].state !== 'lobby') {
+        if (games[roomCodeUpper].state !== 'lobby') {
             socket.emit('error', 'ไม่สามารถเข้าร่วมห้องที่กำลังเล่นอยู่ได้');
             return;
         }
 
-        currentRoomCode = roomCode;
+        currentRoomCode = roomCodeUpper;
         const newPlayer = {
             id: socket.id,
             name: playerName,
             isHost: false,
             score: 0,
         };
-        games[roomCode].players.push(newPlayer);
+        games[roomCodeUpper].players.push(newPlayer);
 
-        socket.join(roomCode);
-        socket.emit('joinSuccess', { roomCode });
-        io.to(roomCode).emit('updatePlayerList', games[roomCode].players);
+        socket.join(roomCodeUpper);
+        socket.emit('joinSuccess', { roomCode: roomCodeUpper });
+        io.to(roomCodeUpper).emit('updatePlayerList', games[roomCodeUpper].players);
     });
     
     socket.on('startGame', ({ time, rounds }) => {
@@ -145,7 +150,7 @@ io.on('connection', (socket) => {
             return;
         }
 
-        if (wasHost) {
+        if (wasHost && game.players.length > 0) {
             game.players[0].isHost = true;
         }
         
@@ -155,6 +160,7 @@ io.on('connection', (socket) => {
 
 function startNewRound(roomCode) {
     const game = games[roomCode];
+    if (!game) return;
     game.currentRound++;
     
     // Select a location
@@ -164,6 +170,7 @@ function startNewRound(roomCode) {
     let locationPool = locationsData.filter(loc => !game.usedLocations.includes(loc.name));
     const location = locationPool[Math.floor(Math.random() * locationPool.length)];
     game.usedLocations.push(location.name);
+    game.currentLocation = location.name;
     
     // Assign roles
     const playersInRoom = game.players;
@@ -196,6 +203,7 @@ function startNewRound(roomCode) {
     // Start timer
     if (game.timer) clearInterval(game.timer);
     let timeLeft = game.settings.time;
+    io.to(roomCode).emit('timerUpdate', timeLeft); // Initial emit
     game.timer = setInterval(() => {
         timeLeft--;
         io.to(roomCode).emit('timerUpdate', timeLeft);
@@ -207,20 +215,20 @@ function startNewRound(roomCode) {
 
 function endRound(roomCode, reason) {
     const game = games[roomCode];
-    if (game.state !== 'playing') return;
+    if (!game || game.state !== 'playing') return;
     clearInterval(game.timer);
-    game.state = 'lobby';
+    game.state = 'post-round';
 
     let resultText = "";
     if (reason === "spy_escaped") {
         resultText = "หมดเวลา! สายลับหนีไปได้\nสายลับได้รับ 2 คะแนน";
-        game.spy.score += 2;
+        if(game.spy) game.spy.score = (game.spy.score || 0) + 2;
     }
     // Add other win conditions and scoring here later
 
     io.to(roomCode).emit('gameOver', {
-        location: game.usedLocations[game.usedLocations.length - 1],
-        spyName: game.spy.name,
+        location: game.currentLocation,
+        spyName: game.spy ? game.spy.name : 'ไม่มี',
         resultText: resultText,
         isFinalRound: game.currentRound >= game.settings.rounds,
         players: game.players
@@ -228,7 +236,8 @@ function endRound(roomCode, reason) {
     io.to(roomCode).emit('updatePlayerList', game.players);
 }
 
-server.listen(3000, () => {
-    console.log('Server is running on port 3000');
+const PORT = process.env.PORT || 3000;
+server.listen(PORT, () => {
+    console.log(`Server is running on port ${PORT}`);
 });
 

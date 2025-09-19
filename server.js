@@ -16,16 +16,13 @@ const playerSessions = {};
 const TAUNTS = ["ว้าย! โหวตผิดเพราะไม่สวยอะดิ", "เอิ้ก ๆ ๆ ๆ", "ชัดขนาดนี้!", "มองยังไงเนี่ย?", "ไปพักผ่อนบ้างนะ"];
 const SPECTATOR_KEY = process.env.SPECTATOR_KEY || 'letmein';
 
-// ---- helpers ----
-function generateRoomCode() {
-  let code; do { code = Math.random().toString(36).substring(2, 6).toUpperCase(); } while (games[code]);
-  return code;
-}
+// ===== Helpers =====
+function generateRoomCode(){ let code; do { code = Math.random().toString(36).substring(2,6).toUpperCase(); } while (games[code]); return code; }
 function shuffleArray(a){ for (let i=a.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; } }
 function clearTimers(game){ if (game.timer) clearInterval(game.timer); if (game.voteTimer) clearTimeout(game.voteTimer); game.timer=null; game.voteTimer=null; }
 function getAvailableLocations(theme){
-  if (theme === 'default') return locationsData.filter(l=>l.category==='default');
-  if (theme === 'fairytale') return locationsData.filter(l=>l.category==='fairytale');
+  if (theme==='default') return locationsData.filter(l=>l.category==='default');
+  if (theme==='fairytale') return locationsData.filter(l=>l.category==='fairytale');
   return locationsData;
 }
 function pickSpyOptions(all, current, count=25){
@@ -33,11 +30,11 @@ function pickSpyOptions(all, current, count=25){
   const picks = pool.slice(0, Math.max(0,count-1)); picks.push(current); shuffleArray(picks); return picks;
 }
 
-// ---- socket ----
 io.on('connection', (socket)=>{
   let currentRoomCode = null;
   let isSpectator = false;
 
+  // ===== Rejoin =====
   socket.on('rejoinGame', (playerToken)=>{
     const session = playerSessions[playerToken];
     if (session && games[session.roomCode]){
@@ -59,29 +56,23 @@ io.on('connection', (socket)=>{
     }
   });
 
-  // ให้สปายสามารถ “ขอรายการสถานที่ซ้ำ” ได้ตลอด
+  // ให้สปายขอรายการสถานที่ซ้ำได้
   socket.on('requestSpyLocations', ()=>{
     if (!currentRoomCode || !games[currentRoomCode]) return;
     const game = games[currentRoomCode];
     const me = game.players.find(p=>p.socketId===socket.id);
-    if (!me || me.role !== 'สายลับ') return;
+    if (!me || me.role!=='สายลับ') return;
     const allNames = getAvailableLocations(game.settings.theme).map(l=>l.name);
     io.to(socket.id).emit('spyPossibleLocations', { locations: allNames });
   });
 
+  // ===== Create / Join =====
   socket.on('createRoom', ({ playerName, playerToken, asSpectator })=>{
     if (!playerName || !String(playerName).trim()) return socket.emit('error','กรุณาระบุชื่อผู้เล่น');
 
     const roomCode = generateRoomCode();
     currentRoomCode = roomCode;
-    games[roomCode] = {
-      players: [],
-      spectators: [],
-      state: 'lobby',
-      settings: { time: 300, rounds: 5, theme: 'all' },
-      currentRound: 0,
-      usedLocations: []
-    };
+    games[roomCode] = { players: [], spectators: [], state: 'lobby', settings: { time:300, rounds:5, theme:'all' }, currentRound:0, usedLocations: [] };
 
     let assignedToken;
     if (asSpectator){
@@ -125,9 +116,7 @@ io.on('connection', (socket)=>{
     if (!games[code]) return socket.emit('error','ไม่พบห้องนี้');
     if (spectatorKey !== SPECTATOR_KEY) return socket.emit('error','รหัสผู้ชมไม่ถูกต้อง');
 
-    currentRoomCode = code;
-    isSpectator = true;
-
+    currentRoomCode = code; isSpectator = true;
     games[code].spectators.push({ id: uuidv4(), socketId: socket.id, name: name || 'ผู้ชม' });
     socket.join(code);
     socket.emit('spectatorJoined', { roomCode: code, name: name || 'ผู้ชม' });
@@ -135,20 +124,23 @@ io.on('connection', (socket)=>{
     io.to(code).emit('updateSpectators', games[code].spectators.map(s=>s.name));
   });
 
+  // ===== Controls =====
   socket.on('startGame', ({ time, rounds, theme })=>{
-    if (!currentRoomCode || !games[currentRoomCode]) return;
-    if (isSpectator) return;
+    if (!currentRoomCode || !games[currentRoomCode] || isSpectator) return;
     const game = games[currentRoomCode];
     if (!game.players.find(p=>p.socketId===socket.id && p.isHost)) return;
     game.settings = { time: parseInt(time), rounds: parseInt(rounds), theme };
     startNewRound(currentRoomCode);
   });
 
+  // Host skip: ถ้าเล่นอยู่ → เริ่มโหวต, ถ้าโหวตอยู่ → คำนวณผลทันที
   socket.on('hostEndRound', ()=>{
     if (!currentRoomCode || !games[currentRoomCode] || isSpectator) return;
     const game = games[currentRoomCode];
     const p = game.players.find(pl=>pl.socketId===socket.id);
-    if (p && p.isHost && game.state==='playing') startVote(currentRoomCode, 'host_ended');
+    if (!p || !p.isHost) return;
+    if (game.state === 'playing') startVote(currentRoomCode, 'host_ended');
+    else if (game.state === 'voting' || game.state === 'revoting') calculateVoteResults(currentRoomCode);
   });
 
   socket.on('submitVote', (votedPlayerId)=>{
@@ -172,8 +164,7 @@ io.on('connection', (socket)=>{
 
     let resultText = `สายลับหนีรอด! แต่ตอบสถานที่ผิด\nสายลับได้รับ 1 คะแนน`;
     if (guessedLocation === game.currentLocation){
-      game.spy.score++;
-      resultText = `สายลับหนีรอด และตอบสถานที่ถูกต้อง!\nสายลับได้รับเพิ่มอีก 1 คะแนน!`;
+      game.spy.score++; resultText = `สายลับหนีรอด และตอบสถานที่ถูกต้อง!\nสายลับได้รับเพิ่มอีก 1 คะแนน!`;
     }
     endGamePhase(currentRoomCode, resultText);
   });
@@ -238,6 +229,7 @@ io.on('connection', (socket)=>{
           io.to(currentRoomCode).emit('updatePlayerList', game.players);
         }
       }
+
       if (game.players.every(p=>p.disconnected)){
         setTimeout(()=>{
           if (games[currentRoomCode] && games[currentRoomCode].players.every(p=>p.disconnected)){
@@ -249,7 +241,7 @@ io.on('connection', (socket)=>{
   });
 });
 
-// ---- round flow ----
+// ===== Rounds & Voting =====
 function startNewRound(roomCode){
   const game = games[roomCode]; if (!game) return;
 
@@ -285,22 +277,23 @@ function startNewRound(roomCode){
       });
       if (player.role==='สายลับ'){
         const allNames = available.map(l=>l.name);
-        // ส่งทั้งอีเวนต์ใหม่ และอีเวนต์เดิมเพื่อความเข้ากันได้
         io.to(player.socketId).emit('spyPossibleLocations', { locations: allNames });
-        io.to(player.socketId).emit('allLocations', allNames);
+        io.to(player.socketId).emit('allLocations', allNames); // เพื่อความเข้ากันได้กับ client เก่า
       }
     }
   });
 
+  // ⏱ นาฬิการอบ (หยุดเองเมื่อเข้าสู่โหวต)
   let timeLeft = game.settings.time;
   io.to(roomCode).emit('timerUpdate', { timeLeft, players: game.players });
   game.timer = setInterval(()=>{
     timeLeft--;
     io.to(roomCode).emit('timerUpdate', { timeLeft, players: game.players });
-    if (timeLeft<=0){
+    if (timeLeft <= 0){
       const g = games[roomCode]; if (!g) return;
-      if (g.state==='playing') startVote(roomCode, 'timer_end');
-      else if (g.state==='voting' || g.state==='revoting') calculateVoteResults(roomCode);
+      if (g.state === 'playing') startVote(roomCode, 'timer_end');
+      // หยุดนาฬิการอบทันที กันติ๊กถัดไปไปคำนวณผลโหวต
+      clearInterval(g.timer); g.timer = null;
     }
   }, 1000);
 
@@ -311,19 +304,22 @@ function startNewRound(roomCode){
 function startVote(roomCode, reason){
   const game = games[roomCode]; if (!game) return;
 
-  if ((game.state==='voting'||game.state==='revoting') && reason==='timer_end') return calculateVoteResults(roomCode);
+  // เข้าสู่โหมดโหวต: หยุดนาฬิการอบเสมอ
+  if (game.timer){ clearInterval(game.timer); game.timer = null; }
+  if (game.voteTimer){ clearTimeout(game.voteTimer); game.voteTimer = null; }
 
-  if (game.voteTimer){ clearTimeout(game.voteTimer); game.voteTimer=null; }
   game.state='voting';
   const msg = reason==='timer_end' ? 'หมดเวลา! โหวตหาตัวสายลับ' : 'หัวหน้าห้องสั่งจบรอบ!';
   io.to(roomCode).emit('startVote', { players: game.players.filter(p=>!p.disconnected), reason: msg });
-  game.voteTimer = setTimeout(()=>calculateVoteResults(roomCode), 120000);
+
+  // ⏱ นาฬิกาโหวต 120 วินาที
+  game.voteTimer = setTimeout(()=> calculateVoteResults(roomCode), 120000);
 }
 
 function calculateVoteResults(roomCode){
   const game = games[roomCode]; if (!game || !['voting','revoting'].includes(game.state)) return;
 
-  const playersToConsider = (game.state==='revoting'?game.revoteCandidates:game.players).filter(p=>!p.disconnected);
+  const playersToConsider = (game.state==='revoting' ? game.revoteCandidates : game.players).filter(p=>!p.disconnected);
 
   game.state='calculating';
   if (game.voteTimer){ clearTimeout(game.voteTimer); game.voteTimer=null; }

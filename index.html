@@ -11,71 +11,37 @@
     <style>
         body {
             font-family: 'IBM Plex Sans Thai', sans-serif;
-            touch-action: manipulation; /* Prevents double-tap zoom on mobile */
+            touch-action: manipulation;
         }
         .card {
-            background-color: white;
-            padding: 1.5rem;
-            border-radius: 0.75rem;
+            background-color: white; padding: 1.5rem; border-radius: 0.75rem;
             box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
             transition: all 0.3s ease;
         }
         .btn {
-            display: inline-block;
-            font-weight: 600;
-            text-align: center;
-            vertical-align: middle;
-            cursor: pointer;
-            border: 1px solid transparent;
-            padding: 0.75rem 1.5rem;
-            font-size: 1rem;
-            border-radius: 0.5rem;
-            transition: all 0.2s ease-in-out;
-            user-select: none;
+            display: inline-block; font-weight: 600; text-align: center; vertical-align: middle;
+            cursor: pointer; border: 1px solid transparent; padding: 0.75rem 1.5rem;
+            font-size: 1rem; border-radius: 0.5rem; transition: all 0.2s ease-in-out; user-select: none;
         }
-        .btn-primary {
-            color: #fff;
-            background-color: #4f46e5;
-            border-color: #4f46e5;
-        }
-        .btn-primary:hover {
-            background-color: #4338ca;
-            border-color: #3730a3;
-        }
-        .btn-primary:disabled {
-            background-color: #a5b4fc;
-            cursor: not-allowed;
-        }
-        .btn-secondary {
-            color: #fff;
-            background-color: #6b7280;
-            border-color: #6b7280;
-        }
-        .btn-secondary:hover {
-            background-color: #4b5563;
-            border-color: #4b5563;
-        }
+        .btn-primary { color: #fff; background-color: #4f46e5; border-color: #4f46e5; }
+        .btn-primary:hover { background-color: #4338ca; border-color: #3730a3; }
+        .btn-primary:disabled { background-color: #a5b4fc; cursor: not-allowed; }
+        .btn-secondary { color: #fff; background-color: #6b7280; border-color: #6b7280; }
+        .btn-secondary:hover { background-color: #4b5563; border-color: #4b5563; }
         .input-field {
-            width: 100%;
-            padding: 0.75rem;
-            border-radius: 0.5rem;
-            border: 1px solid #d1d5db;
+            width: 100%; padding: 0.75rem; border-radius: 0.5rem; border: 1px solid #d1d5db;
             transition: border-color 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
         }
-        .input-field:focus {
-            outline: none;
-            border-color: #4f46e5;
-            box-shadow: 0 0 0 2px rgba(79, 70, 229, 0.4);
-        }
-        .location-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-            gap: 0.5rem;
-        }
-        /* Hide screens */
-        .hidden {
-            display: none;
-        }
+        .input-field:focus { outline: none; border-color: #4f46e5; box-shadow: 0 0 0 2px rgba(79, 70, 229, 0.4); }
+        .location-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 0.5rem; }
+        .hidden { display: none; }
+        
+        /* NEW STYLES */
+        .location-item { cursor: pointer; padding: 0.5rem; border-radius: 0.25rem; transition: all 0.2s; }
+        .location-item:hover { background-color: #e0e7ff; }
+        .location-item.eliminated { text-decoration: line-through; opacity: 0.5; background-color: #fee2e2; }
+        .vote-btn { width: 100%; margin-bottom: 0.5rem; }
+        .vote-btn:disabled { background-color: #d1d5db; cursor: not-allowed; }
     </style>
 </head>
 <body class="bg-gray-100 text-gray-800 flex items-center justify-center min-h-screen p-4">
@@ -83,19 +49,16 @@
     <div class="w-full max-w-md mx-auto">
         <div id="home-screen">
             <h1 class="text-4xl font-bold text-center mb-6 text-indigo-600">Spyfall</h1>
-            
             <div class="space-y-6">
                 <div class="card">
                     <h2 class="text-xl font-semibold text-gray-700 mb-3">1. ตั้งชื่อของคุณ</h2>
                     <input type="text" id="player-name-input" placeholder="ใส่ชื่อผู้เล่น..." class="input-field">
                     <p id="name-error" class="text-red-500 text-sm mt-2 hidden">กรุณาตั้งชื่อก่อนเข้าร่วมห้อง</p>
                 </div>
-
                 <div class="card">
                     <h2 class="text-xl font-semibold text-gray-700 mb-3">2. สร้างห้องใหม่</h2>
                     <button id="create-room-btn" class="btn btn-primary w-full">สร้างห้อง</button>
                 </div>
-
                 <div class="card">
                     <h2 class="text-xl font-semibold text-gray-700 mb-3">3. เข้าร่วมห้อง</h2>
                     <input type="text" id="room-code-input" placeholder="ใส่รหัสห้อง..." class="input-field mb-3 uppercase" maxlength="4">
@@ -110,36 +73,24 @@
                 <button id="copy-code-btn" class="text-sm btn btn-secondary py-1 px-3">คัดลอก</button>
             </div>
             <p class="mb-4 text-gray-600">กำลังรอผู้เล่นอื่น...</p>
-            <div id="player-list" class="space-y-2 mb-6">
-                </div>
+            <div id="player-list" class="space-y-2 mb-6"></div>
             <div id="game-settings" class="hidden">
                  <h3 class="text-lg font-semibold mb-3 border-t pt-4">ตั้งค่าเกม</h3>
                  <div class="grid grid-cols-2 gap-4 mb-4">
                     <div>
                         <label for="timer-select" class="block text-sm font-medium text-gray-700 mb-2">เวลาในการเล่น:</label>
                         <select id="timer-select" class="input-field w-full">
-                           <option value="480">8 นาที</option>
-                           <option value="420">7 นาที</option>
-                           <option value="360">6 นาที</option>
-                           <option value="300">5 นาที (เร็ว)</option>
+                           <option value="480">8 นาที</option><option value="420">7 นาที</option><option value="360">6 นาที</option><option value="300">5 นาที (เร็ว)</option>
                         </select>
                     </div>
                     <div>
                         <label for="rounds-select" class="block text-sm font-medium text-gray-700 mb-2">จำนวนรอบ:</label>
                         <select id="rounds-select" class="input-field w-full">
-                           <option value="1">1 รอบ</option>
-                           <option value="3">3 รอบ</option>
-                           <option value="5">5 รอบ (แนะนำ)</option>
-                           <option value="7">7 รอบ</option>
+                           <option value="1">1 รอบ</option><option value="3">3 รอบ</option><option value="5">5 รอบ (แนะนำ)</option><option value="7">7 รอบ</option>
                         </select>
                     </div>
                  </div>
-                 <div class="mt-4">
-                    <label for="include-fairytale-checkbox" class="flex items-center cursor-pointer">
-                        <input type="checkbox" id="include-fairytale-checkbox" class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" checked>
-                        <span class="ml-2 text-sm text-gray-700">รวมสถานที่จากนิทาน</span>
-                    </label>
-                 </div>
+                 <div class="mt-4"><label for="include-fairytale-checkbox" class="flex items-center cursor-pointer"><input type="checkbox" id="include-fairytale-checkbox" class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" checked><span class="ml-2 text-sm text-gray-700">รวมสถานที่จากนิทาน</span></label></div>
             </div>
             <button id="start-game-btn" class="btn btn-primary w-full hidden mt-6">เริ่มเกม</button>
             <button id="test-start-btn" class="btn btn-secondary w-full hidden mt-4">เริ่มทดสอบ (1-2 คน)</button>
@@ -153,38 +104,43 @@
             </div>
             <div class="text-sm text-gray-500 mb-2">รอบที่ <span id="current-round">1</span> จาก <span id="total-rounds">5</span></div>
             <div id="game-content" class="text-center p-6 bg-gray-50 rounded-lg my-4 min-h-[150px] flex flex-col justify-center items-center">
-                <p class="text-lg mb-2">สถานที่:</p>
-                <h3 id="location-display" class="text-2xl font-bold">???</h3>
-                <p class="text-sm mt-4 text-gray-500">บทบาท:</p>
-                <p id="role-display" class="text-lg font-semibold">???</p>
+                <p class="text-lg mb-2">สถานที่:</p><h3 id="location-display" class="text-2xl font-bold">???</h3>
+                <p class="text-sm mt-4 text-gray-500">บทบาท:</p><p id="role-display" class="text-lg font-semibold">???</p>
             </div>
-            <div id="spy-actions" class="hidden">
-                <button id="show-locations-btn" class="btn btn-secondary w-full">ดูรายชื่อสถานที่ทั้งหมด</button>
+            <div id="spy-actions" class="hidden"><button id="show-locations-btn" class="btn btn-secondary w-full">ดูรายชื่อสถานที่ทั้งหมด</button></div>
+            <div class="border-t pt-4 mt-4">
+                <h3 class="font-semibold text-center mb-2">ผู้เล่นในห้อง</h3>
+                <div id="in-game-player-list" class="text-center text-gray-600"></div>
+                <button id="host-end-round-btn" class="btn btn-secondary w-full mt-4 hidden text-sm py-2">บังคับจบรอบ (สำหรับ Host)</button>
             </div>
         </div>
 
         <div id="locations-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4">
             <div class="card w-full max-w-lg max-h-[80vh] overflow-y-auto">
-                <h3 class="text-xl font-bold mb-4">รายชื่อสถานที่ทั้งหมด</h3>
-                <div id="locations-list" class="location-grid text-sm">
-                    </div>
+                <h3 class="text-xl font-bold mb-4">รายชื่อสถานที่ (คลิกเพื่อตัดออก)</h3>
+                <div id="locations-list" class="location-grid text-sm"></div>
                 <button id="close-locations-btn" class="btn btn-primary w-full mt-6">ปิด</button>
             </div>
         </div>
 
-        <div id="end-game-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4">
+        <div id="voting-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4">
+            <div class="card text-center w-full max-w-md">
+                <h3 id="vote-reason" class="text-2xl font-bold mb-4">โหวตหาตัวสายลับ</h3>
+                <div id="vote-player-buttons" class="mb-4"></div>
+                <button id="abstain-vote-btn" class="btn btn-secondary w-full text-sm py-2">งดออกเสียง</button>
+            </div>
+        </div>
+
+        <div id="end-round-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4">
             <div class="card text-center w-full max-w-md">
                 <h3 id="end-modal-title" class="text-2xl font-bold mb-4">จบรอบ</h3>
-                <p class="text-lg mb-2">สถานที่คือ:</p>
-                <p id="end-location" class="text-xl font-semibold text-indigo-600 mb-4"></p>
-                <p class="text-lg mb-2">สายลับคือ:</p>
-                <p id="end-spy" class="text-xl font-semibold text-red-500 mb-4"></p>
+                <p class="text-lg mb-2">สถานที่คือ:</p><p id="end-location" class="text-xl font-semibold text-indigo-600 mb-4"></p>
+                <p class="text-lg mb-2">สายลับคือ:</p><p id="end-spy" class="text-xl font-semibold text-red-500 mb-4"></p>
                 <p id="round-result-text" class="text-gray-700 my-4 whitespace-pre-wrap"></p>
                 <button id="next-round-btn" class="btn btn-primary w-full hidden">เริ่มรอบต่อไป</button>
                 <button id="back-to-lobby-btn" class="btn btn-secondary w-full hidden">กลับไปที่ล็อบบี้</button>
             </div>
         </div>
-
     </div>
 
     <script src="/socket.io/socket.io.js"></script>
@@ -213,8 +169,7 @@
         const timerSelect = document.getElementById('timer-select');
         const roundsSelect = document.getElementById('rounds-select');
         const includeFairytaleCheckbox = document.getElementById('include-fairytale-checkbox');
-        const testStartBtn = document.getElementById('test-start-btn'); // Added this
-
+        const testStartBtn = document.getElementById('test-start-btn');
 
         // Game elements
         const timerDisplay = document.getElementById('timer');
@@ -224,12 +179,18 @@
         const showLocationsBtn = document.getElementById('show-locations-btn');
         const currentRoundSpan = document.getElementById('current-round');
         const totalRoundsSpan = document.getElementById('total-rounds');
+        const inGamePlayerList = document.getElementById('in-game-player-list'); // New
+        const hostEndRoundBtn = document.getElementById('host-end-round-btn'); // New
 
         // Modals
         const locationsModal = document.getElementById('locations-modal');
         const locationsList = document.getElementById('locations-list');
         const closeLocationsBtn = document.getElementById('close-locations-btn');
-        const endGameModal = document.getElementById('end-game-modal');
+        const votingModal = document.getElementById('voting-modal'); // New
+        const voteReason = document.getElementById('vote-reason'); // New
+        const votePlayerButtons = document.getElementById('vote-player-buttons'); // New
+        const abstainVoteBtn = document.getElementById('abstain-vote-btn'); // New
+        const endRoundModal = document.getElementById('end-round-modal');
         const endModalTitle = document.getElementById('end-modal-title');
         const endLocation = document.getElementById('end-location');
         const endSpy = document.getElementById('end-spy');
@@ -240,13 +201,9 @@
         let isHost = false;
         
         // --- Event Listeners ---
-        
         createRoomBtn.addEventListener('click', () => {
             const playerName = playerNameInput.value.trim();
-            if (!playerName) {
-                nameError.classList.remove('hidden');
-                return;
-            }
+            if (!playerName) { nameError.classList.remove('hidden'); return; }
             nameError.classList.add('hidden');
             socket.emit('createRoom', { playerName });
             isHost = true;
@@ -255,52 +212,41 @@
         joinRoomBtn.addEventListener('click', () => {
             const playerName = playerNameInput.value.trim();
             const roomCode = roomCodeInput.value.trim().toUpperCase();
-            if (!playerName) {
-                nameError.classList.remove('hidden');
-                return;
-            }
+            if (!playerName) { nameError.classList.remove('hidden'); return; }
             if (!roomCode) return;
             nameError.classList.add('hidden');
             socket.emit('joinRoom', { playerName, roomCode });
         });
         
         copyCodeBtn.addEventListener('click', () => {
-            navigator.clipboard.writeText(lobbyRoomCode.textContent)
-                .then(() => {
-                    copyCodeBtn.textContent = 'คัดลอกแล้ว!';
-                    setTimeout(() => { copyCodeBtn.textContent = 'คัดลอก'; }, 2000);
-                });
+            navigator.clipboard.writeText(lobbyRoomCode.textContent).then(() => {
+                copyCodeBtn.textContent = 'คัดลอกแล้ว!';
+                setTimeout(() => { copyCodeBtn.textContent = 'คัดลอก'; }, 2000);
+            });
         });
 
-        startGameBtn.addEventListener('click', () => {
+        const emitStartGame = () => {
             const time = timerSelect.value;
             const rounds = roundsSelect.value;
             const includeFairytales = includeFairytaleCheckbox.checked;
             socket.emit('startGame', { time, rounds, includeFairytales });
-        });
-        
-        testStartBtn.addEventListener('click', () => { // Added this
-            const time = timerSelect.value;
-            const rounds = roundsSelect.value;
-            const includeFairytales = includeFairytaleCheckbox.checked;
-            socket.emit('startGame', { time, rounds, includeFairytales });
-        });
+        };
+        startGameBtn.addEventListener('click', emitStartGame);
+        testStartBtn.addEventListener('click', emitStartGame);
+
+        hostEndRoundBtn.addEventListener('click', () => socket.emit('hostEndRound'));
+        abstainVoteBtn.addEventListener('click', () => submitVote(null));
 
         nextRoundBtn.addEventListener('click', () => {
             socket.emit('requestNextRound');
-            endGameModal.classList.add('hidden');
+            endRoundModal.classList.add('hidden');
         });
 
-        backToLobbyBtn.addEventListener('click', () => {
-            socket.emit('resetGame');
-        });
-
+        backToLobbyBtn.addEventListener('click', () => socket.emit('resetGame'));
         showLocationsBtn.addEventListener('click', () => locationsModal.classList.remove('hidden'));
         closeLocationsBtn.addEventListener('click', () => locationsModal.classList.add('hidden'));
 
-
         // --- Socket.IO Handlers ---
-
         socket.on('roomCreated', (data) => {
             showScreen('lobby');
             lobbyRoomCode.textContent = data.roomCode;
@@ -311,96 +257,73 @@
             lobbyRoomCode.textContent = data.roomCode;
         });
         
-        socket.on('error', (message) => {
-            alert(message);
-        });
+        socket.on('error', (message) => alert(message));
 
         socket.on('updatePlayerList', (players) => {
+            // Update Lobby List
             playerList.innerHTML = '';
             players.sort((a, b) => (b.score || 0) - (a.score || 0)).forEach(player => {
                 const playerDiv = document.createElement('div');
                 playerDiv.className = 'flex items-center bg-gray-100 p-2 rounded';
-                
                 const crown = player.isHost ? '👑 ' : '';
                 const scoreText = player.score !== undefined ? `(${player.score} คะแนน)` : '';
-
-                const nameSpan = document.createElement('span');
-                nameSpan.className = 'font-semibold';
-                nameSpan.textContent = `${crown}${player.name}`;
-                
-                const scoreSpan = document.createElement('span');
-                scoreSpan.className = 'text-gray-600';
-                scoreSpan.textContent = scoreText;
-
-                const spacer = document.createElement('div');
-                spacer.className = 'flex-grow';
-
-                playerDiv.appendChild(nameSpan);
-                playerDiv.appendChild(spacer);
-                playerDiv.appendChild(scoreSpan);
-
+                playerDiv.innerHTML = `<span class="font-semibold">${crown}${player.name}</span><div class="flex-grow"></div><span class="text-gray-600">${scoreText}</span>`;
                 if (isHost && player.id !== socket.id) {
                      const kickButton = document.createElement('button');
                      kickButton.textContent = 'เตะ';
                      kickButton.className = 'ml-4 text-xs bg-red-500 text-white px-2 py-1 rounded hover:bg-red-600';
-                     kickButton.onclick = () => {
-                         socket.emit('kickPlayer', player.id);
-                     };
+                     kickButton.onclick = () => socket.emit('kickPlayer', player.id);
                      playerDiv.appendChild(kickButton);
                 }
-
                 playerList.appendChild(playerDiv);
             });
+
+            // Update In-Game List
+            inGamePlayerList.innerHTML = players.map(p => p.name).join(', ');
             
-            // --- MODIFIED SECTION ---
+            // Lobby Button Logic
             if (isHost) {
                 gameSettings.classList.remove('hidden');
                 const canStart = players.length >= 3;
-                
                 if (canStart) {
-                    // If enough players, show the normal start button
                     startGameBtn.classList.remove('hidden');
                     startGameBtn.disabled = false;
-                    testStartBtn.classList.add('hidden'); // Hide test button
+                    testStartBtn.classList.add('hidden');
                     startGameError.textContent = '';
                 } else {
-                    // If not enough players, show the test button
-                    startGameBtn.classList.remove('hidden'); // Keep it visible but disabled
+                    startGameBtn.classList.remove('hidden');
                     startGameBtn.disabled = true;
-                    testStartBtn.classList.remove('hidden'); // Show test button
+                    testStartBtn.classList.remove('hidden');
                     startGameError.textContent = 'ต้องมีผู้เล่นอย่างน้อย 3 คน';
                 }
             } else {
-                // If not the host, hide all control buttons
                 startGameBtn.classList.add('hidden');
                 testStartBtn.classList.add('hidden');
                 gameSettings.classList.add('hidden');
             }
         });
 
-        socket.on('gameStarted', ({ location, role, round, totalRounds }) => {
+        socket.on('gameStarted', ({ location, role, round, totalRounds, isHost: isPlayerHost }) => {
             showScreen('game');
-            endGameModal.classList.add('hidden');
+            endRoundModal.classList.add('hidden');
             
             currentRoundSpan.textContent = round;
             totalRoundsSpan.textContent = totalRounds;
-
             locationDisplay.textContent = location;
             roleDisplay.textContent = role;
-            if (role === 'สายลับ') {
-                spyActions.classList.remove('hidden');
-            } else {
-                spyActions.classList.add('hidden');
-            }
+            
+            spyActions.classList.toggle('hidden', role !== 'สายลับ');
+            hostEndRoundBtn.classList.toggle('hidden', !isPlayerHost);
         });
 
         socket.on('allLocations', (allLocations) => {
             locationsList.innerHTML = '';
             allLocations.forEach(loc => {
-                const p = document.createElement('p');
-                p.textContent = loc;
-                p.className = 'p-2 bg-gray-100 rounded';
-                locationsList.appendChild(p);
+                const div = document.createElement('div');
+                div.textContent = loc;
+                div.className = 'p-2 bg-gray-100 rounded location-item';
+                div.onclick = () => div.classList.toggle('eliminated'); // Spy checklist feature
+                locationsList.appendChild(div);
             });
         });
 
@@ -409,9 +332,35 @@
             const seconds = timeLeft % 60;
             timerDisplay.textContent = `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
         });
+
+        // NEW: Handle Voting
+        socket.on('startVote', ({ players, reason }) => {
+            showScreen('game'); // Stay on game screen
+            votingModal.classList.remove('hidden');
+            voteReason.textContent = reason;
+            votePlayerButtons.innerHTML = '';
+
+            players.forEach(player => {
+                if (player.id !== socket.id) { // Can't vote for yourself
+                    const button = document.createElement('button');
+                    button.textContent = player.name;
+                    button.className = 'btn btn-primary vote-btn';
+                    button.onclick = () => submitVote(player.id);
+                    votePlayerButtons.appendChild(button);
+                }
+            });
+        });
+
+        function submitVote(playerId) {
+            socket.emit('submitVote', playerId);
+            // Disable all vote buttons after voting
+            votePlayerButtons.querySelectorAll('button').forEach(btn => btn.disabled = true);
+            abstainVoteBtn.disabled = true;
+        }
         
-        socket.on('gameOver', ({ location, spyName, resultText, isFinalRound, players }) => {
-            endGameModal.classList.remove('hidden');
+        socket.on('roundOver', ({ location, spyName, resultText, isFinalRound, players }) => {
+            votingModal.classList.add('hidden');
+            endRoundModal.classList.remove('hidden');
             endLocation.textContent = location;
             endSpy.textContent = spyName;
             
@@ -435,7 +384,7 @@
 
         socket.on('returnToLobby', () => {
             showScreen('lobby');
-            endGameModal.classList.add('hidden');
+            endRoundModal.classList.add('hidden');
         });
 
         socket.on('kicked', () => {
@@ -443,9 +392,7 @@
             window.location.reload();
         });
 
-
-        // --- Utility Functions ---
-
+        // Utility Functions
         function showScreen(screenName) {
             homeScreen.classList.add('hidden');
             lobbyScreen.classList.add('hidden');
@@ -455,7 +402,6 @@
             if (screenName === 'lobby') lobbyScreen.classList.remove('hidden');
             if (screenName === 'game') gameScreen.classList.remove('hidden');
         }
-
     </script>
 </body>
 </html>

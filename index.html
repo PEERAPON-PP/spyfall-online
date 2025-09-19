@@ -57,8 +57,8 @@
             <div id="game-settings" class="hidden">
                  <h3 class="text-lg font-semibold mb-3 border-t pt-4">ตั้งค่าเกม</h3>
                  <div class="grid grid-cols-2 gap-4 mb-4">
-                    <div><label for="timer-select" class="block text-sm font-medium">เวลา:</label><select id="timer-select" class="input-field w-full"><option value="180">3 นาที</option><option value="300" selected>5 นาที</option><option value="420">7 นาที</option><option value="540">9 นาที</option><option value="600">10 นาที</option></select></div>
-                    <div><label for="rounds-select" class="block text-sm font-medium">รอบ:</label><select id="rounds-select" class="input-field w-full"><option value="1">1</option><option value="3">3</option><option value="5" selected>5</option><option value="7">7</option></select></div>
+                    <div><label for="timer-select" class="block text-sm font-medium">เวลา:</label><select id="timer-select" class="input-field w-full"><option value="30">30 วินาที (ทดสอบ)</option><option value="180">3 นาที</option><option value="300" selected>5 นาที</option><option value="420">7 นาที</option><option value="540">9 นาที</option><option value="600">10 นาที</option></select></div>
+                    <div><label for="rounds-select" class="block text-sm font-medium">รอบ:</label><select id="rounds-select" class="input-field w-full"><option value="1">1</option><option value="2">2 (ทดสอบ)</option><option value="3">3</option><option value="5" selected>5</option><option value="7">7</option></select></div>
                  </div>
                  <div><label for="theme-select" class="block text-sm font-medium mb-2">ธีมสถานที่:</label><select id="theme-select" class="input-field w-full"><option value="all">ทั้งหมด</option><option value="default">สถานที่ทั่วไป</option><option value="fairytale">นิทานเท่านั้น</option></select></div>
             </div>
@@ -125,7 +125,6 @@
         }
         function generateToken() { return ([1e7]+-1e3+-4e3+-8e3+-1e11).replace(/[018]/g, c => (c ^ crypto.getRandomValues(new Uint8Array(1))[0] & 15 >> c / 4).toString(16)); }
         
-        // FIX: Moved submitVote to the global scope so it can be accessed by all listeners
         function submitVote(playerId) {
             socket.emit('submitVote', playerId);
             votePlayerButtons.querySelectorAll('button').forEach(btn => btn.disabled = true);
@@ -177,7 +176,7 @@
         confirmSpyGuessBtn.addEventListener('click', () => { socket.emit('spyGuessLocation', spyLocationGuess.value); showModal(null); });
         rejoinBtn.addEventListener('click', () => { socket.emit('rejoinGame', localStorage.getItem('playerToken')); rejoinPrompt.classList.add('hidden'); });
 
-        // --- Socket.IO Handlers (FIX: All listeners are now at the top level) ---
+        // --- Socket.IO Handlers ---
         socket.on('connect', () => {
             playerToken = localStorage.getItem('playerToken');
             const lastRoom = localStorage.getItem('lastRoomCode');
@@ -248,17 +247,28 @@
             showModal('voting');
             voteReason.textContent = reason;
             votePlayerButtons.innerHTML = '';
-
+            
             players.forEach(player => {
-                if (!socket.playerData || player.id !== socket.playerData.id) {
-                    const button = document.createElement('button');
-                    button.textContent = player.name;
-                    button.className = 'btn btn-primary vote-btn w-full mb-2';
-                    button.onclick = () => submitVote(player.id);
-                    votePlayerButtons.appendChild(button);
-                }
+                const button = document.createElement('button');
+                button.textContent = player.name;
+                button.className = 'btn btn-primary vote-btn w-full mb-2';
+                button.onclick = () => submitVote(player.id);
+                votePlayerButtons.appendChild(button);
             });
+
             abstainVoteBtn.disabled = false;
+
+            let voteTimeLeft = 120;
+            if (voteTimerInterval) clearInterval(voteTimerInterval);
+            voteTimerDisplay.textContent = voteTimeLeft;
+            voteTimerInterval = setInterval(() => {
+                voteTimeLeft--;
+                if (voteTimeLeft >= 0) {
+                    voteTimerDisplay.textContent = voteTimeLeft;
+                } else {
+                    clearInterval(voteTimerInterval);
+                }
+            }, 1000);
         });
 
         socket.on('spyGuessPhase', ({ locations, taunt }) => {
@@ -290,7 +300,7 @@
                 backToLobbyBtn.classList.add('hidden');
             }
             roundResultText.textContent = resultMessage;
-            updateScoreboard(players, playerList); // Update lobby scoreboard as well
+            updateScoreboard(players, playerList);
         });
 
         socket.on('returnToLobby', () => { showScreen('lobby'); showModal(null); localStorage.removeItem('lastRoomCode'); });
@@ -301,3 +311,4 @@
     </script>
 </body>
 </html>
+

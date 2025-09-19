@@ -162,11 +162,30 @@ function startNewRound(roomCode) {
 }
 
 function endRound(roomCode, reason) {
-    const game = games[roomCode]; if (!game || game.state !== 'playing') return;
-    clearTimers(game); game.state = 'voting';
-    const voteReason = reason === "timer_end" ? "หมดเวลา! โหวตหาตัวสายลับ" : "หัวหน้าห้องสั่งจบรอบ!";
-    io.to(roomCode).emit('startVote', { players: game.players.filter(p => !p.disconnected), reason: voteReason });
-    game.voteTimer = setTimeout(() => calculateVoteResults(roomCode), 120000);
+    const game = games[roomCode];
+    if (!game || game.state !== 'playing') return;
+
+    clearTimers(game);
+    game.state = 'voting';
+
+    const voteReason =
+        reason === 'timer_end'
+            ? 'หมดเวลา! โหวตหาตัวสายลับ'
+            : 'หัวหน้าห้องสั่งจบรอบ!';
+
+    io.to(roomCode).emit('startVote', {
+        players: game.players.filter(p => !p.disconnected),
+        reason: voteReason
+    });
+
+    // ถ้าหัวหน้าห้องเป็นผู้บังคับจบรอบ ให้สรุปผลโหวตทันที
+    if (reason === 'host_ended') {
+        clearTimeout(game.voteTimer);
+        game.voteTimer = setTimeout(() => calculateVoteResults(roomCode), 0);
+    } else {
+        clearTimeout(game.voteTimer);
+        game.voteTimer = setTimeout(() => calculateVoteResults(roomCode), 120000);
+    }
 }
 
 function calculateVoteResults(roomCode) {

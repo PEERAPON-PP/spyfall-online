@@ -128,6 +128,11 @@
             container.innerHTML = '';
             const sortedPlayers = [...players].sort((a, b) => b.score - a.score);
 
+            // Find the current client's player data and host status *within this function's scope*.
+            // This is more robust than relying on a global variable that might be stale.
+            const self = players.find(p => p.token === playerToken);
+            const currentClientIsHost = self ? self.isHost : false;
+
             sortedPlayers.forEach(player => {
                 const playerDiv = document.createElement('div');
                 playerDiv.className = 'flex justify-between items-center bg-gray-100 p-2 rounded';
@@ -143,7 +148,6 @@
                 if (player.isSpectator) {
                     statusText = ' (ผู้ชม)';
                 } else if (allPlayerRoles === null && screens.lobby.offsetParent !== null) {
-                    const self = players.find(p => p.token === playerToken);
                     if(self && self.isSpectator && player.id === self.id) statusText = ' (รอเล่นรอบถัดไป)';
                 }
                 nameSpan.innerHTML = `${crown}${player.name}<span class="text-gray-500">${statusText}</span>`;
@@ -168,15 +172,15 @@
                 // Lobby specific buttons
                 if (container === playerList) {
                     // Toggle Spectator Button
-                    if (socket.playerData && player.id === socket.playerData.id && !player.isHost) {
+                    if (self && player.id === self.id && !player.isHost) {
                         const toggleBtn = document.createElement('button');
                         toggleBtn.textContent = player.isSpectator ? 'สลับเป็นผู้เล่น' : 'สลับเป็นผู้ชม';
                         toggleBtn.className = 'btn btn-secondary btn-sm';
                         toggleBtn.onclick = () => socket.emit('toggleSpectatorMode');
                         rightDiv.appendChild(toggleBtn);
                     }
-                    // Kick Button
-                    if (isHost && socket.playerData && player.id !== socket.playerData.id) {
+                    // Kick Button - USE THE LOCALLY DETERMINED HOST STATUS
+                    if (currentClientIsHost && self && player.id !== self.id) {
                          const kickButton = document.createElement('button');
                          kickButton.textContent = 'เตะ';
                          kickButton.className = 'btn bg-red-500 hover:bg-red-600 text-white btn-sm';
@@ -263,16 +267,24 @@
         socket.on('error', m => alert(m));
 
         socket.on('updatePlayerList', players => {
+            // Persist self data and global isHost for other functions that rely on it
             const self = players.find(p => p.token === playerToken);
-            if (self) { socket.playerData = self; isHost = self.isHost; }
-            updateScoreboard(players, playerList);
+            if (self) {
+                socket.playerData = self;
+                isHost = self.isHost;
+            }
+
+            // Always use the fresh 'self' object for rendering this specific screen's controls
+            const currentClientIsHost = self ? self.isHost : false;
+            
+            updateScoreboard(players, playerList); // The scoreboard now internally checks host status correctly
             
             // Show settings for everyone, but disable for non-hosts
             gameSettings.classList.remove('hidden');
             const settingInputs = gameSettings.querySelectorAll('select');
-            settingInputs.forEach(input => input.disabled = !isHost);
+            settingInputs.forEach(input => input.disabled = !currentClientIsHost);
             
-            if (isHost) {
+            if (currentClientIsHost) {
                 const activePlayers = players.filter(p => !p.disconnected).length;
                 const canStart = activePlayers >= 1;
                 startGameBtn.classList.remove('hidden');

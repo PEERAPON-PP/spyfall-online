@@ -81,25 +81,21 @@
 <body class="bg-gray-100 text-gray-800 flex items-center justify-center min-h-screen p-4">
 
     <div class="w-full max-w-md mx-auto">
-        <!-- Home Screen -->
         <div id="home-screen">
             <h1 class="text-4xl font-bold text-center mb-6 text-indigo-600">Spyfall</h1>
             
             <div class="space-y-6">
-                <!-- Section 1: Set Your Name -->
                 <div class="card">
                     <h2 class="text-xl font-semibold text-gray-700 mb-3">1. ตั้งชื่อของคุณ</h2>
                     <input type="text" id="player-name-input" placeholder="ใส่ชื่อผู้เล่น..." class="input-field">
                     <p id="name-error" class="text-red-500 text-sm mt-2 hidden">กรุณาตั้งชื่อก่อนเข้าร่วมห้อง</p>
                 </div>
 
-                <!-- Section 2: Create a Room -->
                 <div class="card">
                     <h2 class="text-xl font-semibold text-gray-700 mb-3">2. สร้างห้องใหม่</h2>
                     <button id="create-room-btn" class="btn btn-primary w-full">สร้างห้อง</button>
                 </div>
 
-                <!-- Section 3: Join a Room -->
                 <div class="card">
                     <h2 class="text-xl font-semibold text-gray-700 mb-3">3. เข้าร่วมห้อง</h2>
                     <input type="text" id="room-code-input" placeholder="ใส่รหัสห้อง..." class="input-field mb-3 uppercase" maxlength="4">
@@ -108,7 +104,6 @@
             </div>
         </div>
 
-        <!-- Lobby Screen -->
         <div id="lobby-screen" class="hidden card">
             <div class="flex justify-between items-center mb-4">
                 <h2 class="text-2xl font-bold">ห้อง: <span id="lobby-room-code" class="text-indigo-600 font-mono"></span></h2>
@@ -116,8 +111,7 @@
             </div>
             <p class="mb-4 text-gray-600">กำลังรอผู้เล่นอื่น...</p>
             <div id="player-list" class="space-y-2 mb-6">
-                <!-- Player list will be generated here -->
-            </div>
+                </div>
             <div id="game-settings" class="hidden">
                  <h3 class="text-lg font-semibold mb-3 border-t pt-4">ตั้งค่าเกม</h3>
                  <div class="grid grid-cols-2 gap-4 mb-4">
@@ -148,10 +142,10 @@
                  </div>
             </div>
             <button id="start-game-btn" class="btn btn-primary w-full hidden mt-6">เริ่มเกม</button>
+            <button id="test-start-btn" class="btn btn-secondary w-full hidden mt-4">เริ่มทดสอบ (1-2 คน)</button>
             <p id="start-game-error" class="text-center text-red-500 mt-2 text-sm"></p>
         </div>
 
-        <!-- Game Screen -->
         <div id="game-screen" class="hidden card">
             <div class="flex justify-between items-center mb-2">
                 <h2 class="text-3xl font-bold text-indigo-600">Spyfall</h2>
@@ -169,19 +163,16 @@
             </div>
         </div>
 
-        <!-- Locations Modal -->
         <div id="locations-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4">
             <div class="card w-full max-w-lg max-h-[80vh] overflow-y-auto">
                 <h3 class="text-xl font-bold mb-4">รายชื่อสถานที่ทั้งหมด</h3>
                 <div id="locations-list" class="location-grid text-sm">
-                    <!-- Location list will be generated here -->
-                </div>
+                    </div>
                 <button id="close-locations-btn" class="btn btn-primary w-full mt-6">ปิด</button>
             </div>
         </div>
 
-        <!-- End Game Modal -->
-         <div id="end-game-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4">
+        <div id="end-game-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4">
             <div class="card text-center w-full max-w-md">
                 <h3 id="end-modal-title" class="text-2xl font-bold mb-4">จบรอบ</h3>
                 <p class="text-lg mb-2">สถานที่คือ:</p>
@@ -222,6 +213,7 @@
         const timerSelect = document.getElementById('timer-select');
         const roundsSelect = document.getElementById('rounds-select');
         const includeFairytaleCheckbox = document.getElementById('include-fairytale-checkbox');
+        const testStartBtn = document.getElementById('test-start-btn'); // Added this
 
 
         // Game elements
@@ -287,6 +279,13 @@
             socket.emit('startGame', { time, rounds, includeFairytales });
         });
         
+        testStartBtn.addEventListener('click', () => { // Added this
+            const time = timerSelect.value;
+            const rounds = roundsSelect.value;
+            const includeFairytales = includeFairytaleCheckbox.checked;
+            socket.emit('startGame', { time, rounds, includeFairytales });
+        });
+
         nextRoundBtn.addEventListener('click', () => {
             socket.emit('requestNextRound');
             endGameModal.classList.add('hidden');
@@ -353,12 +352,29 @@
                 playerList.appendChild(playerDiv);
             });
             
+            // --- MODIFIED SECTION ---
             if (isHost) {
                 gameSettings.classList.remove('hidden');
-                startGameBtn.classList.remove('hidden');
                 const canStart = players.length >= 3;
-                startGameBtn.disabled = !canStart;
-                startGameError.textContent = canStart ? '' : 'ต้องมีผู้เล่นอย่างน้อย 3 คน';
+                
+                if (canStart) {
+                    // If enough players, show the normal start button
+                    startGameBtn.classList.remove('hidden');
+                    startGameBtn.disabled = false;
+                    testStartBtn.classList.add('hidden'); // Hide test button
+                    startGameError.textContent = '';
+                } else {
+                    // If not enough players, show the test button
+                    startGameBtn.classList.remove('hidden'); // Keep it visible but disabled
+                    startGameBtn.disabled = true;
+                    testStartBtn.classList.remove('hidden'); // Show test button
+                    startGameError.textContent = 'ต้องมีผู้เล่นอย่างน้อย 3 คน';
+                }
+            } else {
+                // If not the host, hide all control buttons
+                startGameBtn.classList.add('hidden');
+                testStartBtn.classList.add('hidden');
+                gameSettings.classList.add('hidden');
             }
         });
 
@@ -443,4 +459,3 @@
     </script>
 </body>
 </html>
-

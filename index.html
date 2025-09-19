@@ -36,7 +36,6 @@
         .location-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 0.5rem; }
         .hidden { display: none; }
         
-        /* NEW STYLES */
         .location-item { cursor: pointer; padding: 0.5rem; border-radius: 0.25rem; transition: all 0.2s; }
         .location-item:hover { background-color: #e0e7ff; }
         .location-item.eliminated { text-decoration: line-through; opacity: 0.5; background-color: #fee2e2; }
@@ -179,17 +178,17 @@
         const showLocationsBtn = document.getElementById('show-locations-btn');
         const currentRoundSpan = document.getElementById('current-round');
         const totalRoundsSpan = document.getElementById('total-rounds');
-        const inGamePlayerList = document.getElementById('in-game-player-list'); // New
-        const hostEndRoundBtn = document.getElementById('host-end-round-btn'); // New
+        const inGamePlayerList = document.getElementById('in-game-player-list');
+        const hostEndRoundBtn = document.getElementById('host-end-round-btn');
 
         // Modals
         const locationsModal = document.getElementById('locations-modal');
         const locationsList = document.getElementById('locations-list');
         const closeLocationsBtn = document.getElementById('close-locations-btn');
-        const votingModal = document.getElementById('voting-modal'); // New
-        const voteReason = document.getElementById('vote-reason'); // New
-        const votePlayerButtons = document.getElementById('vote-player-buttons'); // New
-        const abstainVoteBtn = document.getElementById('abstain-vote-btn'); // New
+        const votingModal = document.getElementById('voting-modal');
+        const voteReason = document.getElementById('vote-reason');
+        const votePlayerButtons = document.getElementById('vote-player-buttons');
+        const abstainVoteBtn = document.getElementById('abstain-vote-btn');
         const endRoundModal = document.getElementById('end-round-modal');
         const endModalTitle = document.getElementById('end-modal-title');
         const endLocation = document.getElementById('end-location');
@@ -260,7 +259,6 @@
         socket.on('error', (message) => alert(message));
 
         socket.on('updatePlayerList', (players) => {
-            // Update Lobby List
             playerList.innerHTML = '';
             players.sort((a, b) => (b.score || 0) - (a.score || 0)).forEach(player => {
                 const playerDiv = document.createElement('div');
@@ -278,10 +276,8 @@
                 playerList.appendChild(playerDiv);
             });
 
-            // Update In-Game List
             inGamePlayerList.innerHTML = players.map(p => p.name).join(', ');
             
-            // Lobby Button Logic
             if (isHost) {
                 gameSettings.classList.remove('hidden');
                 const canStart = players.length >= 3;
@@ -307,6 +303,9 @@
             showScreen('game');
             endRoundModal.classList.add('hidden');
             
+            // --- BUG FIX IS HERE ---
+            isHost = isPlayerHost; // Update global host status every round
+
             currentRoundSpan.textContent = round;
             totalRoundsSpan.textContent = totalRounds;
             locationDisplay.textContent = location;
@@ -322,7 +321,7 @@
                 const div = document.createElement('div');
                 div.textContent = loc;
                 div.className = 'p-2 bg-gray-100 rounded location-item';
-                div.onclick = () => div.classList.toggle('eliminated'); // Spy checklist feature
+                div.onclick = () => div.classList.toggle('eliminated');
                 locationsList.appendChild(div);
             });
         });
@@ -333,15 +332,14 @@
             timerDisplay.textContent = `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
         });
 
-        // NEW: Handle Voting
         socket.on('startVote', ({ players, reason }) => {
-            showScreen('game'); // Stay on game screen
+            showScreen('game');
             votingModal.classList.remove('hidden');
             voteReason.textContent = reason;
             votePlayerButtons.innerHTML = '';
 
             players.forEach(player => {
-                if (player.id !== socket.id) { // Can't vote for yourself
+                if (player.id !== socket.id) {
                     const button = document.createElement('button');
                     button.textContent = player.name;
                     button.className = 'btn btn-primary vote-btn';
@@ -353,7 +351,6 @@
 
         function submitVote(playerId) {
             socket.emit('submitVote', playerId);
-            // Disable all vote buttons after voting
             votePlayerButtons.querySelectorAll('button').forEach(btn => btn.disabled = true);
             abstainVoteBtn.disabled = true;
         }
@@ -392,7 +389,6 @@
             window.location.reload();
         });
 
-        // Utility Functions
         function showScreen(screenName) {
             homeScreen.classList.add('hidden');
             lobbyScreen.classList.add('hidden');

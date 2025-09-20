@@ -19,8 +19,7 @@ function initializeSocketHandlers(io) {
         socket.on('createRoom', ({ playerName, playerToken }) => {
             const roomCode = gameManager.generateRoomCode(games);
             socket.roomCode = roomCode;
-            socket.playerToken = playerToken;
-            games[roomCode] = { players: [], state: 'lobby', settings: { time: 300, rounds: 5, theme: 'all', voteTime: 120 }, currentRound: 0, usedLocations: [] };
+            games[roomCode] = { players: [], state: 'lobby', settings: { time: 300, rounds: 5, themes: ['default'], voteTime: 120 }, currentRound: 0, usedLocations: [] };
             const player = { id: uuidv4(), socketId: socket.id, name: playerName, isHost: true, score: 0, token: playerToken, isSpectator: false, disconnected: false };
             games[roomCode].players.push(player);
             playerSessions[playerToken] = { roomCode, playerId: player.id };
@@ -34,16 +33,13 @@ function initializeSocketHandlers(io) {
             const game = games[roomCodeUpper];
             if (!game) return socket.emit('error', 'ไม่พบห้องนี้');
 
-            // If game is in progress, ALWAYS prompt to take over a spot.
             if (game.state !== 'lobby') {
                 const disconnectedPlayers = game.players.filter(p => p.disconnected);
                 socket.emit('promptRejoinOrSpectate', { disconnectedPlayers, roomCode: roomCodeUpper });
                 return;
             }
 
-            // Normal lobby join logic
             socket.roomCode = roomCodeUpper;
-            socket.playerToken = playerToken;
             const player = { id: uuidv4(), socketId: socket.id, name: playerName, isHost: false, score: 0, token: playerToken, isSpectator: false, disconnected: false };
             game.players.push(player);
             playerSessions[playerToken] = { roomCode: roomCodeUpper, playerId: player.id };
@@ -60,15 +56,12 @@ function initializeSocketHandlers(io) {
             if (playerToTakeOver && playerToTakeOver.disconnected) {
                 const oldName = playerToTakeOver.name;
 
-                // Update the player slot with the new player's info
                 socket.roomCode = roomCode;
-                socket.playerToken = playerToken;
                 playerToTakeOver.socketId = socket.id;
                 playerToTakeOver.disconnected = false;
                 playerToTakeOver.token = playerToken;
-                playerToTakeOver.name = newPlayerName; // Change the name
+                playerToTakeOver.name = newPlayerName;
 
-                // Update session mapping
                 playerSessions[playerToken] = { roomCode, playerId: playerToTakeOver.id };
                 
                 socket.join(roomCode);
@@ -87,7 +80,6 @@ function initializeSocketHandlers(io) {
             if (!game) return socket.emit('error', 'ไม่พบห้อง');
             
             socket.roomCode = roomCode;
-            socket.playerToken = playerToken;
             const player = { id: uuidv4(), socketId: socket.id, name: playerName, isHost: false, score: 0, token: playerToken, isSpectator: 'waiting', disconnected: false };
             game.players.push(player);
             playerSessions[playerToken] = { roomCode, playerId: player.id };
@@ -106,8 +98,10 @@ function initializeSocketHandlers(io) {
         socket.on('settingChanged', ({ setting, value }) => {
             const { game, player } = getCurrentState();
             if (game && player && player.isHost && game.state === 'lobby') {
-                const parsedValue = isNaN(parseInt(value)) ? value : parseInt(value);
-                game.settings[setting] = parsedValue;
+                if(setting === 'themes' && value.length === 0){
+                   value.push('default'); // Fallback to default if no theme is selected
+                }
+                game.settings[setting] = value;
                 io.to(socket.roomCode).emit('settingsUpdated', game.settings);
             }
         });
@@ -178,32 +172,24 @@ function initializeSocketHandlers(io) {
         });
 
         socket.on('disconnect', () => {
-            let roomCode = socket.roomCode;
-            let playerToDisconnect = null;
-
-            if (!roomCode) {
-                 for (const rc in games) {
-                    const p = games[rc].players.find(p => p.socketId === socket.id);
-                    if (p) {
-                        playerToDisconnect = p;
-                        roomCode = rc;
-                        break;
-                    }
-                }
-            } else {
-                const game = games[roomCode];
-                if (game) {
-                    playerToDisconnect = game.players.find(p => p.socketId === socket.id);
-                }
+            const roomCode = socket.roomCode;
+            if (!roomCode || !games[roomCode]) {
+                // This socket wasn't in a room, or the room is gone. Do nothing.
+                return;
             }
+            
+            const game = games[roomCode];
+            // Find the player associated with the *specific socket ID that is disconnecting*.
+            const player = game.players.find(p => p.socketId === socket.id);
 
-            if (playerToDisconnect && roomCode) {
-                const game = games[roomCode];
-                playerToDisconnect.disconnected = true;
-                io.to(roomCode).emit('playerDisconnected', playerToDisconnect.name);
+            // If a player is found, it means this is a disconnect for their *current* session.
+            // If no player is found, it's a "ghost" disconnect from an old session, and we should ignore it.
+            if (player) {
+                player.disconnected = true;
+                io.to(roomCode).emit('playerDisconnected', player.name);
                 io.to(roomCode).emit('updatePlayerList', {players: game.players, settings: game.settings});
                 
-                if (playerToDisconnect.isHost) {
+                if (player.isHost) {
                     const newHost = game.players.find(p => !p.disconnected);
                     if (newHost) {
                         newHost.isHost = true;

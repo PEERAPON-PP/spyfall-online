@@ -79,7 +79,7 @@ function startNewRound(roomCode, games, io) {
     
     game.players.forEach(p => { 
         if (p.isSpectator === 'waiting') p.isSpectator = false;
-        delete p.role; // Clear roles from previous round
+        delete p.role;
     });
 
     const availableLocations = getAvailableLocations(game.settings.themes);
@@ -122,6 +122,8 @@ function startNewRound(roomCode, games, io) {
         return { id: p.id, role: name };
     });
     
+    const allThemeLocationNames = availableLocations.map(l => l.name);
+
     game.players.forEach(player => {
         const socket = io.sockets.sockets.get(player.socketId);
         if (socket) {
@@ -131,29 +133,34 @@ function startNewRound(roomCode, games, io) {
                 isHost: player.isHost,
                 players: game.players,
                 isSpectator: player.isSpectator,
-                allLocationsData: availableLocations
+                allLocationsData: availableLocations 
             };
 
             if (player.isSpectator) {
                 payload.location = game.currentLocation;
                 payload.allPlayerRoles = allPlayerRoles;
                 payload.role = "ผู้ชม";
-            } else if (player.role) { // Only send role data if they are an active player
+            } else if (player.role) {
                 const { name: roleName, description: roleDesc } = parseRole(player.role);
                 const isSpy = roleName === 'สายลับ';
                 
                 payload.role = roleName;
                 payload.roleDesc = roleDesc;
                 payload.location = isSpy ? 'ไม่ทราบ' : game.currentLocation;
+                
+                let locationsForPlayerList = allThemeLocationNames;
+                if (isSpy) {
+                   let shuffled = [...allThemeLocationNames];
+                   shuffleArray(shuffled);
+                   locationsForPlayerList = shuffled.slice(0, 20);
+                }
+                payload.allLocations = locationsForPlayerList; // This is JUST for the modal list.
 
                 if (isSpy && game.bountyTarget) {
                     payload.bountyTargetName = game.bountyTarget.name;
                 }
             } else {
-                // This case handles disconnected players who are not spectators
-                // They shouldn't get a gameStarted event, but if they do, provide safe defaults
-                payload.role = "Disconnected";
-                payload.location = "N/A";
+                return; // Don't send gameStarted to disconnected players
             }
             socket.emit('gameStarted', payload);
         }
@@ -406,7 +413,6 @@ function sendGameStateToSpectator(game, player, io) {
         allLocationsData: getAvailableLocations(game.settings.themes)
     });
 }
-
 
 module.exports = {
     generateRoomCode,

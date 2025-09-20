@@ -150,9 +150,14 @@ function startNewRound(roomCode, games, io) {
                 
                 let locationsForPlayerList = allThemeLocationNames;
                 if (isSpy) {
-                   let shuffled = [...allThemeLocationNames];
-                   shuffleArray(shuffled);
-                   locationsForPlayerList = shuffled.slice(0, 20);
+                   // --- START: FIX SPY LOCATION LIST ---
+                   let otherLocations = allThemeLocationNames.filter(name => name !== game.currentLocation);
+                   shuffleArray(otherLocations);
+                   let spyList = otherLocations.slice(0, 19);
+                   spyList.push(game.currentLocation);
+                   shuffleArray(spyList);
+                   locationsForPlayerList = spyList;
+                   // --- END: FIX SPY LOCATION LIST ---
                 }
                 payload.allLocations = locationsForPlayerList; // This is JUST for the modal list.
 
@@ -254,9 +259,15 @@ function initiateSpyEscape(roomCode, reason, games, io) {
     game.spy.score++;
     game.state = 'spy-guessing';
     const taunt = TAUNTS[Math.floor(Math.random() * TAUNTS.length)];
+    
+    // --- START: FIX SPY GUESS LIST ---
     const allLocNames = getAvailableLocations(game.settings.themes).map(l => l.name);
-    shuffleArray(allLocNames);
-    const spyLocations = allLocNames.slice(0, 20); 
+    let otherLocations = allLocNames.filter(name => name !== game.currentLocation);
+    shuffleArray(otherLocations);
+    let spyLocations = otherLocations.slice(0, 19);
+    spyLocations.push(game.currentLocation);
+    shuffleArray(spyLocations);
+    // --- END: FIX SPY GUESS LIST ---
     
     const spySocket = io.sockets.sockets.get(game.spy.socketId);
     if(spySocket) spySocket.emit('spyGuessPhase', { locations: spyLocations, taunt: `${reason} ${taunt}`, duration: 30 });
@@ -328,12 +339,17 @@ function initiateBountyHunt(roomCode, games, io) {
     const spySocket = io.sockets.sockets.get(game.spy.socketId);
     
     if (spySocket) {
-        let locationOptions = getAvailableLocations(game.settings.themes);
-        shuffleArray(locationOptions);
-        locationOptions = locationOptions.slice(0, 20);
+        // --- START: FIX BOUNTY HUNT LOCATION LIST ---
+        const allLocNames = getAvailableLocations(game.settings.themes).map(l => l.name);
+        let otherLocations = allLocNames.filter(name => name !== game.currentLocation);
+        shuffleArray(otherLocations);
+        let spyLocations = otherLocations.slice(0, 19);
+        spyLocations.push(game.currentLocation);
+        shuffleArray(spyLocations);
+        // --- END: FIX BOUNTY HUNT LOCATION LIST ---
 
         spySocket.emit('bountyHuntPhase', {
-            locations: locationOptions.map(l => l.name),
+            locations: spyLocations,
             targetName: game.bountyTarget.name,
             duration: 45
         });
@@ -426,4 +442,3 @@ module.exports = {
     sendGameStateToSpectator,
     clearTimers
 };
-

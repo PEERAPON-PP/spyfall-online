@@ -29,7 +29,7 @@ try {
 const TAUNTS = ["ว้าย! โหวตผิดเพราะไม่สวยอะดิ", "เอิ้ก ๆ ๆ ๆ", "ชัดขนาดนี้!", "มองยังไงเนี่ย?", "ไปพักผ่อนบ้างนะ"];
 
 async function getSpyListFromGemini(correctLocation, allPossibleLocations, count) {
-    if (!genAI) return null; // Return null if Gemini is not configured
+    if (!genAI) return null;
 
     const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
     const prompt = `You are a game master for the game Spyfall. Your task is to select a list of ${count} locations for the spy.
@@ -54,7 +54,7 @@ async function getSpyListFromGemini(correctLocation, allPossibleLocations, count
     } catch (error) {
         console.error("Error calling Gemini API:", error);
     }
-    return null; // Return null on error
+    return null;
 }
 
 
@@ -98,6 +98,12 @@ function startGame(roomCode, settings, games, io) {
         bountyHuntEnabled: bountyHuntEnabled, 
         useGemini: !!genAI 
     };
+
+    // Create the initial shuffled deck of locations for the entire game session
+    const allGameLocations = getAvailableLocations(game.settings.themes);
+    shuffleArray(allGameLocations);
+    game.locationDeck = allGameLocations;
+
     startNewRound(roomCode, games, io);
 }
 
@@ -130,19 +136,22 @@ async function startNewRound(roomCode, games, io) {
         delete p.role;
     });
 
-    const availableLocations = getAvailableLocations(game.settings.themes);
-    if (!availableLocations || availableLocations.length === 0) {
-        io.to(roomCode).emit('error', 'ไม่พบสถานที่สำหรับโหมดที่เลือก');
-        return;
+    // --- START: NEW ROBUST LOCATION PICKING LOGIC ---
+    if (!game.locationDeck || game.locationDeck.length === 0) {
+        console.log("Location deck is empty, reshuffling...");
+        const allGameLocations = getAvailableLocations(game.settings.themes);
+        if(allGameLocations.length === 0) {
+             io.to(roomCode).emit('error', 'ไม่พบสถานที่สำหรับโหมดที่เลือก');
+             return;
+        }
+        shuffleArray(allGameLocations);
+        game.locationDeck = allGameLocations;
     }
 
-    let locationPool = availableLocations.filter(loc => !game.usedLocations.includes(loc.name));
-    if (locationPool.length === 0) { game.usedLocations = []; locationPool = availableLocations; }
-    
-    const location = locationPool[Math.floor(Math.random() * locationPool.length)];
-    game.usedLocations.push(location.name);
+    const location = game.locationDeck.pop(); // Draw a location from the deck
     game.currentLocation = location.name;
     game.currentRoles = location.roles;
+    // --- END: NEW ROBUST LOCATION PICKING LOGIC ---
     
     const activePlayers = game.players.filter(p => !p.disconnected && !p.isSpectator);
     if (activePlayers.length === 0) return;
@@ -188,7 +197,9 @@ async function startNewRound(roomCode, games, io) {
         spyListSize = 20;
     }
     
-    const allThemeLocationNames = availableLocations.map(l => l.name);
+    const availableLocationsForSpyList = getAvailableLocations(game.settings.themes);
+    const allThemeLocationNames = availableLocationsForSpyList.map(l => l.name);
+
     if (spyListSize > allThemeLocationNames.length) {
         spyListSize = allThemeLocationNames.length;
     }
@@ -220,7 +231,7 @@ async function startNewRound(roomCode, games, io) {
                 isHost: player.isHost,
                 players: game.players,
                 isSpectator: player.isSpectator,
-                allLocationsData: availableLocations 
+                allLocationsData: availableLocationsForSpyList
             };
 
             if (player.isSpectator) {

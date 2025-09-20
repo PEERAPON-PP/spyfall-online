@@ -143,7 +143,6 @@ function startNewRound(roomCode, games, io) {
     }
     
     const allThemeLocationNames = availableLocations.map(l => l.name);
-    // Ensure the list size doesn't exceed the total number of available locations
     if (spyListSize > allThemeLocationNames.length) {
         spyListSize = allThemeLocationNames.length;
     }
@@ -154,8 +153,8 @@ function startNewRound(roomCode, games, io) {
     
     let spyList = otherLocations.slice(0, sliceCount);
     spyList.push(game.currentLocation);
-    shuffleArray(spyList);
-    game.spyLocationList = spyList; // Store the list in the game state
+    spyList.sort((a, b) => a.localeCompare('th')); // Sort alphabetically for Thai
+    game.spyLocationList = spyList; // Store the sorted list in the game state
     // --- END: NEW SPY LIST BALANCE LOGIC ---
 
     game.players.forEach(player => {

@@ -58,19 +58,46 @@
             <div id="game-settings" class="hidden">
                  <h3 class="text-lg font-semibold mb-3 border-t pt-4">ตั้งค่าเกม</h3>
                  <div class="grid grid-cols-2 gap-4 mb-4">
-                    <div><label for="timer-select" class="block text-sm font-medium">เวลา:</label><select id="timer-select" class="input-field w-full"><option value="30">30 วินาที (ทดสอบ)</option><option value="180">3 นาที</option><option value="300" selected>5 นาที</option><option value="420">7 นาที</option><option value="540">9 นาที</option><option value="600">10 นาที</option></select></div>
-                    <div><label for="rounds-select" class="block text-sm font-medium">รอบ:</label><select id="rounds-select" class="input-field w-full"><option value="1">1</option><option value="2">2 (ทดสอบ)</option><option value="3">3</option><option value="5" selected>5</option><option value="7">7</option></select></div>
+                    <div>
+                        <label for="timer-select" class="block text-sm font-medium">เวลาเล่นต่อรอบ:</label>
+                        <select id="timer-select" data-setting="time" class="input-field w-full">
+                            <option value="10">10 วินาที</option>
+                            <option value="180">3 นาที</option>
+                            <option value="300" selected>5 นาที</option>
+                            <option value="480">8 นาที</option>
+                            <option value="600">10 นาที</option>
+                            <option value="720">12 นาที</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label for="rounds-select" class="block text-sm font-medium">รอบ:</label>
+                        <select id="rounds-select" data-setting="rounds" class="input-field w-full">
+                            <option value="1">1</option>
+                            <option value="2">2 (ทดสอบ)</option>
+                            <option value="3">3</option>
+                            <option value="5" selected>5</option>
+                            <option value="7">7</option>
+                        </select>
+                    </div>
                  </div>
                  <div class="mb-4">
-                    <label for="vote-timer-select" class="block text-sm font-medium">เวลาโหวต:</label>
-                    <select id="vote-timer-select" class="input-field w-full">
+                    <label for="vote-timer-select" class="block text-sm font-medium">เวลาโหวตต่อรอบ:</label>
+                    <select id="vote-timer-select" data-setting="voteTime" class="input-field w-full">
+                        <option value="10">10 วินาที</option>
                         <option value="30">30 วินาที</option>
                         <option value="60">1 นาที</option>
                         <option value="90">1 นาที 30 วิ</option>
                         <option value="120" selected>2 นาที</option>
                     </select>
                 </div>
-                 <div><label for="theme-select" class="block text-sm font-medium mb-2">ธีมสถานที่:</label><select id="theme-select" class="input-field w-full"><option value="all">ทั้งหมด</option><option value="default">สถานที่ทั่วไป</option><option value="fairytale">นิทานเท่านั้น</option></select></div>
+                 <div>
+                    <label for="theme-select" class="block text-sm font-medium mb-2">โหมด:</label>
+                    <select id="theme-select" data-setting="theme" class="input-field w-full">
+                        <option value="all">สนามทั้งหมด</option>
+                        <option value="default">เฉพาะสถานที่ทั่วไป</option>
+                        <option value="fairytale">เฉพาะสถานที่นิทาน</option>
+                    </select>
+                </div>
             </div>
             <button id="start-game-btn" class="btn btn-primary w-full hidden mt-6">เริ่มเกม</button>
         </div>
@@ -221,6 +248,7 @@
             socket.emit('submitVote', playerId);
             votePlayerButtons.querySelectorAll('button').forEach(btn => btn.disabled = true);
             abstainVoteBtn.disabled = true;
+            // Timer will now continue to run based on server time
         }
 
         // --- Event Listeners ---
@@ -302,7 +330,6 @@
 
             updateScoreboard(players, playerList);
             
-            // Update settings display
             if (settings) {
                 timerSelect.value = settings.time;
                 roundsSelect.value = settings.rounds;
@@ -331,7 +358,7 @@
         });
         
         socket.on('settingsUpdated', (settings) => {
-             if (settings) {
+             if (settings && !isHost) {
                 timerSelect.value = settings.time;
                 roundsSelect.value = settings.rounds;
                 voteTimerSelect.value = settings.voteTime;

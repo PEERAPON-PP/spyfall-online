@@ -158,7 +158,13 @@ startGameBtn.addEventListener('click', () => {
         alert("กรุณาเลือกโหมดอย่างน้อย 1 โหมด");
         return;
     }
-    socket.emit('startGame', { time: timerSelect.value, rounds: roundsSelect.value, themes: selectedThemes, voteTime: voteTimerSelect.value, bountyHuntEnabled: bountyHuntCheckbox.checked });
+    socket.emit('startGame', { 
+        time: timerSelect.value, 
+        rounds: roundsSelect.value, 
+        themes: selectedThemes, 
+        voteTime: voteTimerSelect.value, 
+        bountyHuntEnabled: bountyHuntCheckbox.checked
+    });
 });
 hostEndRoundBtn.addEventListener('click', () => socket.emit('hostEndRound'));
 abstainVoteBtn.addEventListener('click', () => submitVote(null));
@@ -301,7 +307,7 @@ socket.on('gameStarted', (data) => {
         }
         ingameActions.classList.remove('hidden');
         updateScoreboard(data.players, inGameScoreboard);
-        if (data.allLocations) { // This is now a list of names for the spy's list
+        if (data.allLocations) { 
             locationsList.innerHTML = '';
             data.allLocations.forEach(locName => {
                 const div = document.createElement('div');

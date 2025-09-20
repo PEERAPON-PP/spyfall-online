@@ -9,7 +9,8 @@ function initializeSocketHandlers(io) {
 
         socket.on('createRoom', ({ playerName, playerToken }) => {
             const roomCode = gameManager.generateRoomCode(games);
-            socket.roomCode = roomCode; // Attach room code directly to the socket
+            socket.roomCode = roomCode;
+            socket.playerToken = playerToken; // Attach persistent token
             games[roomCode] = { players: [], state: 'lobby', settings: { time: 300, rounds: 5, theme: 'all', voteTime: 120 }, currentRound: 0, usedLocations: [] };
             const player = { id: uuidv4(), socketId: socket.id, name: playerName, isHost: true, score: 0, token: playerToken, isSpectator: false, disconnected: false };
             games[roomCode].players.push(player);
@@ -30,7 +31,8 @@ function initializeSocketHandlers(io) {
                 return;
             }
 
-            socket.roomCode = roomCodeUpper; // Attach room code
+            socket.roomCode = roomCodeUpper;
+            socket.playerToken = playerToken; // Attach persistent token
             const player = { id: uuidv4(), socketId: socket.id, name: playerName, isHost: false, score: 0, token: playerToken, isSpectator: false, disconnected: false };
             game.players.push(player);
             playerSessions[playerToken] = { roomCode: roomCodeUpper, playerId: player.id };
@@ -45,7 +47,8 @@ function initializeSocketHandlers(io) {
 
             const player = game.players.find(p => p.id === playerId);
             if (player && player.disconnected) {
-                socket.roomCode = roomCode; // Attach room code to the new socket connection
+                socket.roomCode = roomCode;
+                socket.playerToken = playerToken; // Attach persistent token
                 player.socketId = socket.id;
                 player.disconnected = false;
                 player.token = playerToken;
@@ -66,7 +69,8 @@ function initializeSocketHandlers(io) {
             const game = games[roomCode];
             if (!game) return socket.emit('error', 'ไม่พบห้อง');
             
-            socket.roomCode = roomCode; // Attach room code
+            socket.roomCode = roomCode;
+            socket.playerToken = playerToken; // Attach persistent token
             const player = { id: uuidv4(), socketId: socket.id, name: playerName, isHost: false, score: 0, token: playerToken, isSpectator: 'waiting', disconnected: false };
             game.players.push(player);
             playerSessions[playerToken] = { roomCode, playerId: player.id };
@@ -178,11 +182,20 @@ function initializeSocketHandlers(io) {
         });
 
         socket.on('disconnect', () => {
-            const roomCode = socket.roomCode;
-            if (!roomCode || !games[roomCode]) return;
+            const playerToken = socket.playerToken;
+            if (!playerToken) return; // Socket was never a player
+
+            const session = playerSessions[playerToken];
+            if (!session || !games[session.roomCode]) {
+                return;
+            }
+
+            const roomCode = session.roomCode;
             const game = games[roomCode];
-            const player = game.players.find(p => p.socketId === socket.id);
-            if (player) {
+            const player = game.players.find(p => p.token === playerToken);
+
+            // Only mark as disconnected if this was their last known connection
+            if (player && player.socketId === socket.id) {
                 player.disconnected = true;
                 io.to(roomCode).emit('playerDisconnected', player.name);
                 io.to(roomCode).emit('updatePlayerList', {players: game.players, settings: game.settings});

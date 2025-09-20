@@ -17,7 +17,13 @@ const socket = io();
 
 // --- Utility Functions ---
 function showScreen(screenName) { Object.values(screens).forEach(s => s.classList.add('hidden')); screens[screenName].classList.remove('hidden'); }
-function showModal(modalName) { Object.values(modals).forEach(m => m.classList.add('hidden')); if(modalName) modals[modalName].classList.remove('hidden'); }
+function showModal(modalName) { 
+    // Clear any special timers when a new modal is shown, to prevent overlaps.
+    if(specialTimerInterval) clearInterval(specialTimerInterval);
+    if(voteTimerInterval) clearInterval(voteTimerInterval);
+    Object.values(modals).forEach(m => m.classList.add('hidden')); 
+    if(modalName) modals[modalName].classList.remove('hidden'); 
+}
 
 function updateScoreboard(players, container, allPlayerRoles = null) {
     container.innerHTML = '';
@@ -190,13 +196,11 @@ backToLobbyBtn.addEventListener('click', () => socket.emit('resetGame'));
 showLocationsBtn.addEventListener('click', () => showModal('locations'));
 closeLocationsBtn.addEventListener('click', () => showModal(null));
 confirmSpyGuessBtn.addEventListener('click', () => { 
-    if(specialTimerInterval) clearInterval(specialTimerInterval);
     socket.emit('spyGuessLocation', spyLocationGuess.value);
     showModal(null);
 });
 bountyHuntBtn.addEventListener('click', () => socket.emit('spyDeclareBounty'));
 confirmBountyGuessBtn.addEventListener('click', () => {
-    if(specialTimerInterval) clearInterval(specialTimerInterval);
     const guess = {
         location: bountyLocationGuess.value,
         role: bountyRoleGuess.value
@@ -388,10 +392,10 @@ socket.on('startVote', ({ players, reason, voteTime }) => {
 });
 
 socket.on('spyGuessPhase', ({ locations, taunt, duration }) => {
+    showModal('spyGuess');
     spyLocationGuess.innerHTML = '';
     locations.forEach(loc => { const o = document.createElement('option'); o.value = loc; o.textContent = loc; spyLocationGuess.appendChild(o); });
     spyGuessTaunt.textContent = taunt || "";
-    showModal('spyGuess');
 
     let timeLeft = duration;
     if(specialTimerInterval) clearInterval(specialTimerInterval);
@@ -404,18 +408,18 @@ socket.on('spyGuessPhase', ({ locations, taunt, duration }) => {
 });
 
 socket.on('spyIsGuessing', ({ spyName, taunt }) => {
+    showModal('waitingForSpy');
     waitingSpyName.textContent = spyName;
     waitingTaunt.textContent = taunt || "";
-    showModal('waitingForSpy');
 });
 
 socket.on('bountyHuntPhase', ({ locations, roles, targetName, duration }) => {
+    showModal('bountyHunt');
     bountyLocationGuess.innerHTML = '';
     locations.forEach(loc => { const o = document.createElement('option'); o.value = loc; o.textContent = loc; bountyLocationGuess.appendChild(o); });
     bountyRoleGuess.innerHTML = '';
     roles.forEach(role => { const o = document.createElement('option'); o.value = role; o.textContent = role; bountyRoleGuess.appendChild(o); });
     bountyTargetName.textContent = targetName;
-    showModal('bountyHunt');
 
     let timeLeft = duration;
     if(specialTimerInterval) clearInterval(specialTimerInterval);
@@ -428,12 +432,14 @@ socket.on('bountyHuntPhase', ({ locations, roles, targetName, duration }) => {
 });
 
 socket.on('waitingForBountyHunt', ({spyName}) => {
-    waitingBountySpyName.textContent = spyName;
     showModal('waitingForBounty');
+    waitingBountySpyName.textContent = spyName;
 });
 
 socket.on('roundOver', ({ location, spyName, resultText, isFinalRound, players }) => {
-    showModal('endRound'); endLocation.textContent = location; endSpy.textContent = spyName;
+    showModal('endRound'); 
+    endLocation.textContent = location; 
+    endSpy.textContent = spyName;
     let resultMessage = resultText;
 
     const self = players.find(p => p.socketId === socket.id);

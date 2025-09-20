@@ -2,11 +2,10 @@ const { v4: uuidv4 } = require('uuid');
 const gameManager = require('./gameManager');
 
 const games = {};
-const playerSessions = {}; // Maps playerToken to { roomCode, playerId }
+const playerSessions = {};
 
 function initializeSocketHandlers(io) {
     io.on('connection', (socket) => {
-
         const getCurrentState = () => {
             const roomCode = socket.roomCode;
             if (!roomCode || !games[roomCode]) return { game: null, player: null };
@@ -18,7 +17,7 @@ function initializeSocketHandlers(io) {
         socket.on('createRoom', ({ playerName, playerToken }) => {
             const roomCode = gameManager.generateRoomCode(games);
             socket.roomCode = roomCode;
-            games[roomCode] = { players: [], state: 'lobby', settings: { time: 300, rounds: 5, themes: ['default'], voteTime: 120 }, currentRound: 0, usedLocations: [] };
+            games[roomCode] = { players: [], state: 'lobby', settings: { time: 300, rounds: 5, themes: ['default'], voteTime: 120, bountyHuntEnabled: false }, currentRound: 0, usedLocations: [] };
             const player = { id: uuidv4(), socketId: socket.id, name: playerName, isHost: true, score: 0, token: playerToken, isSpectator: false, disconnected: false };
             games[roomCode].players.push(player);
             playerSessions[playerToken] = { roomCode, playerId: player.id };
@@ -32,8 +31,6 @@ function initializeSocketHandlers(io) {
             const game = games[roomCodeUpper];
             if (!game) return socket.emit('error', 'ไม่พบห้องนี้');
 
-            // --- SIMPLIFIED JOIN LOGIC ---
-            // If game is in progress, ALWAYS join as a spectator.
             if (game.state !== 'lobby') {
                 socket.roomCode = roomCodeUpper;
                 const player = { id: uuidv4(), socketId: socket.id, name: playerName, isHost: false, score: 0, token: playerToken, isSpectator: 'waiting', disconnected: false };
@@ -45,7 +42,6 @@ function initializeSocketHandlers(io) {
                 return;
             }
 
-            // Normal lobby join logic
             socket.roomCode = roomCodeUpper;
             const player = { id: uuidv4(), socketId: socket.id, name: playerName, isHost: false, score: 0, token: playerToken, isSpectator: false, disconnected: false };
             game.players.push(player);
@@ -55,8 +51,6 @@ function initializeSocketHandlers(io) {
             io.to(roomCodeUpper).emit('updatePlayerList', {players: game.players, settings: game.settings});
         });
         
-        // REMOVED rejoinAsPlayer handler as it's no longer needed.
-
         socket.on('startGame', (settings) => {
             const { game, player } = getCurrentState();
             if (game && player && player.isHost) {
@@ -91,14 +85,24 @@ function initializeSocketHandlers(io) {
         });
         
         socket.on('submitVote', (votedPlayerId) => {
-            if (socket.roomCode) {
-                gameManager.submitVote(socket.roomCode, socket.id, votedPlayerId, games, io);
-            }
+            if (socket.roomCode) gameManager.submitVote(socket.roomCode, socket.id, votedPlayerId, games, io);
         });
 
         socket.on('spyGuessLocation', (guessedLocation) => {
-            if (socket.roomCode) {
-                gameManager.spyGuessLocation(socket.roomCode, socket.id, guessedLocation, games, io);
+            if (socket.roomCode) gameManager.spyGuessLocation(socket.roomCode, socket.id, guessedLocation, games, io);
+        });
+        
+        socket.on('spyDeclareBounty', () => {
+            const { game, player } = getCurrentState();
+            if (game && player && player.role === 'สายลับ' && game.state === 'playing') {
+                gameManager.initiateBountyHunt(socket.roomCode, games, io);
+            }
+        });
+
+        socket.on('submitBountyGuess', (guess) => {
+            const { game, player } = getCurrentState();
+            if (game && player && player.role === 'สายลับ' && game.state === 'bounty-hunting') {
+                gameManager.resolveBountyHunt(socket.roomCode, guess, games, io);
             }
         });
 
@@ -141,43 +145,45 @@ function initializeSocketHandlers(io) {
         });
 
         socket.on('disconnect', () => {
-            let playerFound = null;
-            let roomCodeFound = null;
+            setTimeout(() => {
+                let playerFound = null;
+                let roomCodeFound = null;
 
-            for (const rc in games) {
-                const p = games[rc].players.find(player => player.socketId === socket.id);
-                if (p) {
-                    playerFound = p;
-                    roomCodeFound = rc;
-                    break;
-                }
-            }
-            
-            if (playerFound && roomCodeFound) {
-                const game = games[roomCodeFound];
-                playerFound.disconnected = true;
-                
-                io.to(roomCodeFound).emit('playerDisconnected', playerFound.name);
-                io.to(roomCodeFound).emit('updatePlayerList', { players: game.players, settings: game.settings });
-
-                if (playerFound.isHost) {
-                    const newHost = game.players.find(p => !p.disconnected);
-                    if (newHost) {
-                        newHost.isHost = true;
-                        io.to(roomCodeFound).emit('newHost', newHost.name);
-                        io.to(roomCodeFound).emit('updatePlayerList', { players: game.players, settings: game.settings });
+                for (const rc in games) {
+                    const p = games[rc].players.find(player => player.socketId === socket.id);
+                    if (p) {
+                        playerFound = p;
+                        roomCodeFound = rc;
+                        break;
                     }
                 }
 
-                if (game.players.every(p => p.disconnected)) {
-                    setTimeout(() => {
-                        if (games[roomCodeFound] && games[roomCodeFound].players.every(p => p.disconnected)) {
-                            gameManager.clearTimers(games[roomCodeFound]);
-                            delete games[roomCodeFound];
+                if (playerFound && roomCodeFound) {
+                    const game = games[roomCodeFound];
+                    playerFound.disconnected = true;
+                    
+                    io.to(roomCodeFound).emit('playerDisconnected', playerFound.name);
+                    io.to(roomCodeFound).emit('updatePlayerList', { players: game.players, settings: game.settings });
+
+                    if (playerFound.isHost) {
+                        const newHost = game.players.find(p => !p.disconnected);
+                        if (newHost) {
+                            newHost.isHost = true;
+                            io.to(roomCodeFound).emit('newHost', newHost.name);
+                            io.to(roomCodeFound).emit('updatePlayerList', { players: game.players, settings: game.settings });
                         }
-                    }, 600000);
+                    }
+
+                    if (game.players.every(p => p.disconnected)) {
+                        setTimeout(() => {
+                            if (games[roomCodeFound] && games[roomCodeFound].players.every(p => p.disconnected)) {
+                                gameManager.clearTimers(games[roomCodeFound]);
+                                delete games[roomCodeFound];
+                            }
+                        }, 600000);
+                    }
                 }
-            }
+            }, 1500);
         });
     });
 }

@@ -2,6 +2,8 @@ const express = require('express');
 const http = require('http');
 const socketIo = require('socket.io');
 const { v4: uuidv4 } = require('uuid');
+const fs = require('fs');
+const path = require('path');
 
 const app = express();
 const server = http.createServer(app);
@@ -9,8 +11,27 @@ const io = socketIo(server, {
     pingTimeout: 60000,
 });
 
-const locationsData = require('./locations.json');
-// Make sure to serve files from the 'public' folder
+// --- โหลดข้อมูลสถานที่ทั้งหมดจากโฟลเดอร์ locations ---
+let allLocations = [];
+try {
+    const locationsDir = path.join(__dirname, 'locations');
+    const locationFiles = fs.readdirSync(locationsDir).filter(file => file.endsWith('.json'));
+
+    for (const file of locationFiles) {
+        const filePath = path.join(locationsDir, file);
+        const fileContent = fs.readFileSync(filePath, 'utf8');
+        const locations = JSON.parse(fileContent);
+        allLocations = allLocations.concat(locations);
+    }
+    console.log(`Loaded ${allLocations.length} locations from ${locationFiles.length} files.`);
+} catch (error) {
+    console.error("Could not load location files:", error);
+    // หากโหลดไฟล์ไม่ได้ ให้ใช้ข้อมูลว่างไปก่อนเพื่อไม่ให้เซิร์ฟเวอร์ล่ม
+    allLocations = [];
+}
+// ---------------------------------------------------------
+
+
 app.use(express.static('public'));
 
 const games = {};
@@ -217,9 +238,8 @@ function gameLoop(roomCode) {
 }
 
 function getAvailableLocations(theme) {
-    if (theme === 'default') return locationsData.filter(loc => loc.category === 'default');
-    if (theme === 'fairytale') return locationsData.filter(loc => loc.category === 'fairytale');
-    return locationsData; // all
+    if (theme === 'all') return allLocations;
+    return allLocations.filter(loc => loc.category === theme);
 }
 
 function startNewRound(roomCode) {
@@ -234,6 +254,13 @@ function startNewRound(roomCode) {
     });
 
     const availableLocations = getAvailableLocations(game.settings.theme);
+    if (!availableLocations || availableLocations.length === 0) {
+        console.error("No available locations for the selected theme:", game.settings.theme);
+        // Optionally, inform players
+        io.to(roomCode).emit('error', 'ไม่พบสถานที่สำหรับโหมดที่เลือก');
+        return;
+    }
+
     if (game.usedLocations.length >= availableLocations.length) game.usedLocations = []; 
     let locationPool = availableLocations.filter(loc => !game.usedLocations.includes(loc.name));
     if (locationPool.length === 0) { game.usedLocations = []; locationPool = availableLocations; }
@@ -244,11 +271,16 @@ function startNewRound(roomCode) {
     const activePlayers = game.players.filter(p => !p.disconnected && !p.isSpectator);
     shuffleArray(activePlayers);
     
+    if (activePlayers.length === 0) {
+        console.log("No active players to start the round.");
+        return; // Don't start a round with no one playing
+    }
+    
     const spyIndex = Math.floor(Math.random() * activePlayers.length);
     let roles = [...location.roles]; shuffleArray(roles);
     
     activePlayers.forEach((player, index) => {
-        player.role = (index === spyIndex) ? 'สายลับ' : (roles.pop() || location.roles[0]);
+        player.role = (index === spyIndex) ? 'สายลับ' : (roles.pop() || "พลเมืองดี"); // Fallback role
         if (player.role === 'สายลับ') game.spy = player;
     });
 
@@ -339,7 +371,7 @@ function startReVote(roomCode, candidateIds) {
 
 function calculateVoteResults(roomCode) {
     const game = games[roomCode];
-    if (!game || !['voting', 'revoting'].includes(game.state)) return;
+    if (!game || !['voting', 'revoting'].includes(game.state) || !game.spy) return;
 
     const spyId = game.spy.id;
     const voteCounts = {};
@@ -384,7 +416,7 @@ function calculateVoteResults(roomCode) {
 
 function spyEscapes(roomCode, reason) {
     const game = games[roomCode];
-    if (!game) return;
+    if (!game || !game.spy) return;
     game.spy.score++;
     game.state = 'spy-guessing';
 
@@ -392,7 +424,7 @@ function spyEscapes(roomCode, reason) {
     
     const allLocNames = getAvailableLocations(game.settings.theme).map(l => l.name);
     shuffleArray(allLocNames);
-    const spyLocations = allLocNames.slice(0, 20); // Reduced to 20
+    const spyLocations = allLocNames.slice(0, 20); 
     
     const spySocket = io.sockets.sockets.get(game.spy.socketId);
     if(spySocket) {
@@ -418,3 +450,4 @@ function endGamePhase(roomCode, resultText) {
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => console.log(`Server is running on port ${PORT}`));
+

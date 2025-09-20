@@ -2,10 +2,11 @@ const { v4: uuidv4 } = require('uuid');
 const gameManager = require('./gameManager');
 
 const games = {};
-const playerSessions = {};
+const playerSessions = {}; // Maps playerToken to { roomCode, playerId }
 
 function initializeSocketHandlers(io) {
     io.on('connection', (socket) => {
+
         const getCurrentState = () => {
             const roomCode = socket.roomCode;
             if (!roomCode || !games[roomCode]) return { game: null, player: null };
@@ -31,17 +32,22 @@ function initializeSocketHandlers(io) {
             const game = games[roomCodeUpper];
             if (!game) return socket.emit('error', 'ไม่พบห้องนี้');
 
+            // --- SIMPLIFIED JOIN LOGIC ---
             if (game.state !== 'lobby') {
                 socket.roomCode = roomCodeUpper;
                 const player = { id: uuidv4(), socketId: socket.id, name: playerName, isHost: false, score: 0, token: playerToken, isSpectator: 'waiting', disconnected: false };
                 game.players.push(player);
                 playerSessions[playerToken] = { roomCode: roomCodeUpper, playerId: player.id };
                 socket.join(roomCodeUpper);
-                socket.emit('joinSuccessAsSpectator', { roomCode: roomCodeUpper });
+                
+                // Immediately send them the current game state so they can spectate
+                gameManager.sendGameStateToSpectator(game, player, io);
+
                 io.to(roomCodeUpper).emit('updatePlayerList', {players: game.players, settings: game.settings});
                 return;
             }
 
+            // Normal lobby join logic
             socket.roomCode = roomCodeUpper;
             const player = { id: uuidv4(), socketId: socket.id, name: playerName, isHost: false, score: 0, token: playerToken, isSpectator: false, disconnected: false };
             game.players.push(player);
@@ -94,14 +100,14 @@ function initializeSocketHandlers(io) {
         
         socket.on('spyDeclareBounty', () => {
             const { game, player } = getCurrentState();
-            if (game && player && player.role === 'สายลับ' && game.state === 'playing') {
+            if (game && player && parseRole(player.role).name === 'สายลับ' && game.state === 'playing') {
                 gameManager.initiateBountyHunt(socket.roomCode, games, io);
             }
         });
 
         socket.on('submitBountyGuess', (guess) => {
             const { game, player } = getCurrentState();
-            if (game && player && player.role === 'สายลับ' && game.state === 'bounty-hunting') {
+            if (game && player && parseRole(player.role).name === 'สายลับ' && game.state === 'bounty-hunting') {
                 gameManager.resolveBountyHunt(socket.roomCode, guess, games, io);
             }
         });

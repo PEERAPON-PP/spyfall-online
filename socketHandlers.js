@@ -7,7 +7,6 @@ const playerSessions = {}; // Maps playerToken to { roomCode, playerId }
 function initializeSocketHandlers(io) {
     io.on('connection', (socket) => {
 
-        // Helper to get current game and player from socket
         const getCurrentState = () => {
             const roomCode = socket.roomCode;
             if (!roomCode || !games[roomCode]) return { game: null, player: null };
@@ -33,12 +32,20 @@ function initializeSocketHandlers(io) {
             const game = games[roomCodeUpper];
             if (!game) return socket.emit('error', 'ไม่พบห้องนี้');
 
+            // --- SIMPLIFIED JOIN LOGIC ---
+            // If game is in progress, ALWAYS join as a spectator.
             if (game.state !== 'lobby') {
-                const disconnectedPlayers = game.players.filter(p => p.disconnected);
-                socket.emit('promptRejoinOrSpectate', { disconnectedPlayers, roomCode: roomCodeUpper });
+                socket.roomCode = roomCodeUpper;
+                const player = { id: uuidv4(), socketId: socket.id, name: playerName, isHost: false, score: 0, token: playerToken, isSpectator: 'waiting', disconnected: false };
+                game.players.push(player);
+                playerSessions[playerToken] = { roomCode: roomCodeUpper, playerId: player.id };
+                socket.join(roomCodeUpper);
+                socket.emit('joinSuccessAsSpectator', { roomCode: roomCodeUpper });
+                io.to(roomCodeUpper).emit('updatePlayerList', {players: game.players, settings: game.settings});
                 return;
             }
 
+            // Normal lobby join logic
             socket.roomCode = roomCodeUpper;
             const player = { id: uuidv4(), socketId: socket.id, name: playerName, isHost: false, score: 0, token: playerToken, isSpectator: false, disconnected: false };
             game.players.push(player);
@@ -48,45 +55,7 @@ function initializeSocketHandlers(io) {
             io.to(roomCodeUpper).emit('updatePlayerList', {players: game.players, settings: game.settings});
         });
         
-        socket.on('rejoinAsPlayer', ({ roomCode, playerId, playerToken, newPlayerName }) => {
-            const game = games[roomCode];
-            if (!game) return socket.emit('error', 'ไม่พบห้องขณะพยายามเข้าร่วมอีกครั้ง');
-
-            const playerToTakeOver = game.players.find(p => p.id === playerId);
-            if (playerToTakeOver && playerToTakeOver.disconnected) {
-                const oldName = playerToTakeOver.name;
-
-                socket.roomCode = roomCode;
-                playerToTakeOver.socketId = socket.id;
-                playerToTakeOver.disconnected = false;
-                playerToTakeOver.token = playerToken;
-                playerToTakeOver.name = newPlayerName;
-
-                playerSessions[playerToken] = { roomCode, playerId: playerToTakeOver.id };
-                
-                socket.join(roomCode);
-                
-                socket.emit('rejoinSuccess', { game, roomCode: roomCode, self: playerToTakeOver });
-                
-                io.to(roomCode).emit('playerTookOver', { newName: newPlayerName, oldName: oldName });
-                io.to(roomCode).emit('updatePlayerList', {players: game.players, settings: game.settings});
-            } else {
-                socket.emit('error', 'ไม่สามารถเข้าร่วมแทนผู้เล่นคนนี้ได้');
-            }
-        });
-
-        socket.on('joinAsSpectator', ({ roomCode, playerName, playerToken }) => {
-            const game = games[roomCode];
-            if (!game) return socket.emit('error', 'ไม่พบห้อง');
-            
-            socket.roomCode = roomCode;
-            const player = { id: uuidv4(), socketId: socket.id, name: playerName, isHost: false, score: 0, token: playerToken, isSpectator: 'waiting', disconnected: false };
-            game.players.push(player);
-            playerSessions[playerToken] = { roomCode, playerId: player.id };
-            socket.join(roomCode);
-            socket.emit('joinSuccessAsSpectator', { roomCode });
-            io.to(roomCode).emit('updatePlayerList', {players: game.players, settings: game.settings});
-        });
+        // REMOVED rejoinAsPlayer handler as it's no longer needed.
 
         socket.on('startGame', (settings) => {
             const { game, player } = getCurrentState();
@@ -99,7 +68,7 @@ function initializeSocketHandlers(io) {
             const { game, player } = getCurrentState();
             if (game && player && player.isHost && game.state === 'lobby') {
                 if(setting === 'themes' && value.length === 0){
-                   value.push('default'); // Fallback to default if no theme is selected
+                   value.push('default');
                 }
                 game.settings[setting] = value;
                 io.to(socket.roomCode).emit('settingsUpdated', game.settings);
@@ -172,50 +141,43 @@ function initializeSocketHandlers(io) {
         });
 
         socket.on('disconnect', () => {
-            // Introduce a delay to handle race conditions on quick reconnects
-            setTimeout(() => {
-                let playerFound = null;
-                let roomCodeFound = null;
+            let playerFound = null;
+            let roomCodeFound = null;
 
-                // Find which player this disconnecting socket belonged to
-                for (const rc in games) {
-                    const p = games[rc].players.find(player => player.socketId === socket.id);
-                    if (p) {
-                        playerFound = p;
-                        roomCodeFound = rc;
-                        break;
+            for (const rc in games) {
+                const p = games[rc].players.find(player => player.socketId === socket.id);
+                if (p) {
+                    playerFound = p;
+                    roomCodeFound = rc;
+                    break;
+                }
+            }
+            
+            if (playerFound && roomCodeFound) {
+                const game = games[roomCodeFound];
+                playerFound.disconnected = true;
+                
+                io.to(roomCodeFound).emit('playerDisconnected', playerFound.name);
+                io.to(roomCodeFound).emit('updatePlayerList', { players: game.players, settings: game.settings });
+
+                if (playerFound.isHost) {
+                    const newHost = game.players.find(p => !p.disconnected);
+                    if (newHost) {
+                        newHost.isHost = true;
+                        io.to(roomCodeFound).emit('newHost', newHost.name);
+                        io.to(roomCodeFound).emit('updatePlayerList', { players: game.players, settings: game.settings });
                     }
                 }
 
-                // If a player is found, it means this socket ID is still the *current* one for that player.
-                // This prevents a "ghost" disconnect from an old session marking a reconnected player as disconnected.
-                if (playerFound && roomCodeFound) {
-                    const game = games[roomCodeFound];
-                    
-                    playerFound.disconnected = true;
-                    
-                    io.to(roomCodeFound).emit('playerDisconnected', playerFound.name);
-                    io.to(roomCodeFound).emit('updatePlayerList', { players: game.players, settings: game.settings });
-
-                    if (playerFound.isHost) {
-                        const newHost = game.players.find(p => !p.disconnected);
-                        if (newHost) {
-                            newHost.isHost = true;
-                            io.to(roomCodeFound).emit('newHost', newHost.name);
-                            io.to(roomCodeFound).emit('updatePlayerList', { players: game.players, settings: game.settings });
+                if (game.players.every(p => p.disconnected)) {
+                    setTimeout(() => {
+                        if (games[roomCodeFound] && games[roomCodeFound].players.every(p => p.disconnected)) {
+                            gameManager.clearTimers(games[roomCodeFound]);
+                            delete games[roomCodeFound];
                         }
-                    }
-
-                    if (game.players.every(p => p.disconnected)) {
-                        setTimeout(() => {
-                            if (games[roomCodeFound] && games[roomCodeFound].players.every(p => p.disconnected)) {
-                                gameManager.clearTimers(games[roomCodeFound]);
-                                delete games[roomCodeFound];
-                            }
-                        }, 600000);
-                    }
+                    }, 600000);
                 }
-            }, 1500); // 1.5 second delay
+            }
         });
     });
 }

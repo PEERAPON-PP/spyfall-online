@@ -4,6 +4,13 @@ const gameManager = require('./gameManager');
 const games = {};
 const playerSessions = {}; // Maps playerToken to { roomCode, playerId }
 
+// ฟังก์ชันที่เพิ่มเข้ามาเพื่อแก้ปัญหา
+function parseRole(roleString) {
+    if (!roleString) return { name: '', description: null };
+    const match = roleString.match(/^(.*?)\s*\((.*?)\)$/);
+    return match ? { name: match[1].trim(), description: match[2].trim() } : { name: roleString, description: null };
+}
+
 function initializeSocketHandlers(io) {
     io.on('connection', (socket) => {
 
@@ -195,4 +202,3 @@ function initializeSocketHandlers(io) {
 }
 
 module.exports = initializeSocketHandlers;
-

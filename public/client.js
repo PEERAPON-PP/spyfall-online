@@ -114,7 +114,6 @@ function submitVote(playerId) {
     socket.emit('submitVote', playerId);
     votePlayerButtons.querySelectorAll('button').forEach(btn => btn.disabled = true);
     abstainVoteBtn.disabled = true;
-    // Timer will now continue to run based on server time
 }
 
 function setGameTheme(role) {
@@ -185,8 +184,17 @@ socket.on('connect', () => {
     }
 });
 
-socket.on('roomCreated', d => { showScreen('lobby'); lobbyRoomCode.textContent = d.roomCode; localStorage.setItem('lastRoomCode', d.roomCode); });
-socket.on('joinSuccess', d => { showScreen('lobby'); lobbyRoomCode.textContent = d.roomCode; localStorage.setItem('lastRoomCode', d.roomCode); });
+socket.on('roomCreated', d => { 
+    showScreen('lobby');
+    lobbyRoomCode.textContent = d.roomCode; 
+    localStorage.setItem('lastRoomCode', d.roomCode); 
+});
+
+socket.on('joinSuccess', d => { 
+    showScreen('lobby'); 
+    lobbyRoomCode.textContent = d.roomCode; 
+    localStorage.setItem('lastRoomCode', d.roomCode); 
+});
 
 socket.on('rejoinSuccess', ({ game, roomCode, self }) => {
     socket.playerData = self;
@@ -247,17 +255,24 @@ socket.on('settingsUpdated', (settings) => {
 
 socket.on('promptRejoinOrSpectate', ({ disconnectedPlayers, roomCode }) => {
     rejoinPlayerList.innerHTML = '';
+    const newPlayerName = playerNameInput.value.trim();
+    if (!newPlayerName) {
+        nameError.classList.remove('hidden');
+        alert('กรุณากรอกชื่อของคุณก่อนเลือกเข้าร่วมแทนผู้เล่นอื่น');
+        return;
+    }
+
     if (disconnectedPlayers.length > 0) {
         disconnectedPlayers.forEach(player => {
             const button = document.createElement('button');
-            button.textContent = `เข้าร่วมในชื่อ: ${player.name}`;
+            button.textContent = `เข้าร่วมแทน: ${player.name}`;
             button.className = 'btn btn-primary w-full mb-2';
             button.onclick = () => {
                 if (!playerToken) {
                      playerToken = generateToken();
                      localStorage.setItem('playerToken', playerToken);
                 }
-                socket.emit('rejoinAsPlayer', { roomCode, playerId: player.id, playerToken });
+                socket.emit('rejoinAsPlayer', { roomCode, playerId: player.id, playerToken, newPlayerName });
                 showModal(null);
             };
             rejoinPlayerList.appendChild(button);
@@ -284,7 +299,7 @@ socket.on('gameStarted', (data) => {
     
     currentRoundSpan.textContent = data.round;
     totalRoundsSpan.textContent = data.totalRounds;
-    gameRoomCode.textContent = lobbyRoomCode.textContent; // Show room code in game
+    gameRoomCode.textContent = lobbyRoomCode.textContent; 
     hostEndRoundBtn.classList.toggle('hidden', !currentClientIsHost || (self && self.isSpectator));
     setGameTheme(data.role);
 
@@ -322,9 +337,6 @@ socket.on('gameStarted', (data) => {
 socket.on('timerUpdate', ({ timeLeft, players }) => {
     timerDisplay.textContent = `${String(Math.floor(timeLeft/60)).padStart(2,'0')}:${String(timeLeft%60).padStart(2,'0')}`;
     if (screens.game.offsetParent !== null) {
-        const self = players.find(p => p.socketId === socket.id);
-        if (self && self.isSpectator) {
-        }
         updateScoreboard(players, inGameScoreboard);
     }
 });
@@ -400,6 +412,8 @@ socket.on('roundOver', ({ location, spyName, resultText, isFinalRound, players }
 socket.on('returnToLobby', () => { showScreen('lobby'); showModal(null); localStorage.removeItem('lastRoomCode'); });
 socket.on('kicked', () => { alert('คุณถูกเตะออกจากห้อง'); localStorage.removeItem('lastRoomCode'); window.location.reload(); });
 socket.on('playerDisconnected', name => { lobbyMessage.textContent = `${name} หลุดออกจากเกม...`; });
-socket.on('playerReconnected', name => { lobbyMessage.textContent = `${name} กลับเข้าสู่เกม!`; });
+socket.on('playerTookOver', ({ newName, oldName }) => {
+    lobbyMessage.textContent = `${newName} ได้เข้าร่วมแทน ${oldName}!`;
+});
 socket.on('newHost', name => { lobbyMessage.textContent = `${name} ได้เป็นหัวหน้าห้องคนใหม่`; });
 

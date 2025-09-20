@@ -76,6 +76,7 @@ function startNewRound(roomCode, games, io) {
     game.revoteCandidates = [];
     game.spy = null;
     game.bountyTarget = null;
+    game.spyLocationList = []; // Reset the list for the new round
     
     game.players.forEach(p => { 
         if (p.isSpectator === 'waiting') p.isSpectator = false;
@@ -124,6 +125,14 @@ function startNewRound(roomCode, games, io) {
     
     const allThemeLocationNames = availableLocations.map(l => l.name);
 
+    // --- GENERATE AND STORE THE SPY'S LOCATION LIST ONCE PER ROUND ---
+    let otherLocations = allThemeLocationNames.filter(name => name !== game.currentLocation);
+    shuffleArray(otherLocations);
+    let spyList = otherLocations.slice(0, 19);
+    spyList.push(game.currentLocation);
+    shuffleArray(spyList);
+    game.spyLocationList = spyList; // Store the list in the game state
+
     game.players.forEach(player => {
         const socket = io.sockets.sockets.get(player.socketId);
         if (socket) {
@@ -140,6 +149,7 @@ function startNewRound(roomCode, games, io) {
                 payload.location = game.currentLocation;
                 payload.allPlayerRoles = allPlayerRoles;
                 payload.role = "ผู้ชม";
+                payload.allLocations = [];
             } else if (player.role) {
                 const { name: roleName, description: roleDesc } = parseRole(player.role);
                 const isSpy = roleName === 'สายลับ';
@@ -148,18 +158,8 @@ function startNewRound(roomCode, games, io) {
                 payload.roleDesc = roleDesc;
                 payload.location = isSpy ? 'ไม่ทราบ' : game.currentLocation;
                 
-                let locationsForPlayerList = allThemeLocationNames;
-                if (isSpy) {
-                   // --- START: FIX SPY LOCATION LIST ---
-                   let otherLocations = allThemeLocationNames.filter(name => name !== game.currentLocation);
-                   shuffleArray(otherLocations);
-                   let spyList = otherLocations.slice(0, 19);
-                   spyList.push(game.currentLocation);
-                   shuffleArray(spyList);
-                   locationsForPlayerList = spyList;
-                   // --- END: FIX SPY LOCATION LIST ---
-                }
-                payload.allLocations = locationsForPlayerList; // This is JUST for the modal list.
+                // Use the stored list for the spy, or all locations for others (though client doesn't use it for non-spies)
+                payload.allLocations = isSpy ? game.spyLocationList : allThemeLocationNames;
 
                 if (isSpy && game.bountyTarget) {
                     payload.bountyTargetName = game.bountyTarget.name;
@@ -260,17 +260,9 @@ function initiateSpyEscape(roomCode, reason, games, io) {
     game.state = 'spy-guessing';
     const taunt = TAUNTS[Math.floor(Math.random() * TAUNTS.length)];
     
-    // --- START: FIX SPY GUESS LIST ---
-    const allLocNames = getAvailableLocations(game.settings.themes).map(l => l.name);
-    let otherLocations = allLocNames.filter(name => name !== game.currentLocation);
-    shuffleArray(otherLocations);
-    let spyLocations = otherLocations.slice(0, 19);
-    spyLocations.push(game.currentLocation);
-    shuffleArray(spyLocations);
-    // --- END: FIX SPY GUESS LIST ---
-    
     const spySocket = io.sockets.sockets.get(game.spy.socketId);
-    if(spySocket) spySocket.emit('spyGuessPhase', { locations: spyLocations, taunt: `${reason} ${taunt}`, duration: 60 });
+    // Use the stored list from the start of the round
+    if(spySocket) spySocket.emit('spyGuessPhase', { locations: game.spyLocationList, taunt: `${reason} ${taunt}`, duration: 60 });
 
     game.players.forEach(p => {
         if (p.id !== game.spy.id) {
@@ -339,17 +331,9 @@ function initiateBountyHunt(roomCode, games, io) {
     const spySocket = io.sockets.sockets.get(game.spy.socketId);
     
     if (spySocket) {
-        // --- START: FIX BOUNTY HUNT LOCATION LIST ---
-        const allLocNames = getAvailableLocations(game.settings.themes).map(l => l.name);
-        let otherLocations = allLocNames.filter(name => name !== game.currentLocation);
-        shuffleArray(otherLocations);
-        let spyLocations = otherLocations.slice(0, 19);
-        spyLocations.push(game.currentLocation);
-        shuffleArray(spyLocations);
-        // --- END: FIX BOUNTY HUNT LOCATION LIST ---
-
+        // Use the stored list from the start of the round
         spySocket.emit('bountyHuntPhase', {
-            locations: spyLocations,
+            locations: game.spyLocationList,
             targetName: game.bountyTarget.name,
             duration: 60
         });
@@ -442,3 +426,4 @@ module.exports = {
     sendGameStateToSpectator,
     clearTimers
 };
+

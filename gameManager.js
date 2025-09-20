@@ -108,7 +108,9 @@ function startNewRound(roomCode, games, io) {
 
     if (game.settings.bountyHuntEnabled && game.spy && activePlayers.length > 1) {
         const potentialTargets = activePlayers.filter(p => p.id !== game.spy.id);
-        game.bountyTarget = potentialTargets[Math.floor(Math.random() * potentialTargets.length)];
+        if (potentialTargets.length > 0) {
+            game.bountyTarget = potentialTargets[Math.floor(Math.random() * potentialTargets.length)];
+        }
     }
 
     const allPlayerRoles = activePlayers.map(p => {
@@ -258,7 +260,7 @@ function initiateSpyEscape(roomCode, reason, games, io) {
 
     game.specialTimer = setTimeout(() => {
         if(games[roomCode] && games[roomCode].state === 'spy-guessing'){
-            endGamePhase(roomCode, `สายลับหนีรอด! แต่ตอบสถานที่ผิด (หมดเวลา)\nสายลับได้รับ 1 คะแนน`, games, io);
+            spyGuessLocation(roomCode, game.spy.socketId, null, games, io); // Timeout = wrong guess
         }
     }, 30 * 1000);
 }
@@ -300,6 +302,83 @@ function spyGuessLocation(roomCode, socketId, guessedLocation, games, io) {
     endGamePhase(roomCode, resultText, games, io);
 }
 
+function initiateBountyHunt(roomCode, games, io) {
+    const game = games[roomCode];
+    if (!game || !game.spy || !game.bountyTarget || game.state !== 'playing') return;
+
+    clearTimers(game); // Stop the main game timer
+    game.state = 'bounty-hunting';
+
+    const spySocket = io.sockets.sockets.get(game.spy.socketId);
+    const otherPlayers = game.players.filter(p => p.id !== game.spy.id);
+    
+    // Send options to spy
+    if (spySocket) {
+        const locationOptions = getAvailableLocations(game.settings.themes).map(l => l.name);
+        const roleOptions = game.currentRoles.map(r => parseRole(r).name).filter(r => r !== 'สายลับ');
+        
+        spySocket.emit('bountyHuntPhase', {
+            locations: locationOptions,
+            roles: roleOptions,
+            targetName: game.bountyTarget.name,
+            duration: 45
+        });
+    }
+
+    // Inform other players
+    otherPlayers.forEach(p => {
+        const playerSocket = io.sockets.sockets.get(p.socketId);
+        if (playerSocket) playerSocket.emit('waitingForBountyHunt', { spyName: game.spy.name });
+    });
+
+    // Start a timer for the bounty hunt
+    game.specialTimer = setTimeout(() => {
+        if (games[roomCode] && games[roomCode].state === 'bounty-hunting') {
+            resolveBountyHunt(roomCode, { location: null, role: null }, games, io); // Timeout = wrong guess
+        }
+    }, 45 * 1000);
+}
+
+function resolveBountyHunt(roomCode, guess, games, io) {
+    const game = games[roomCode];
+    if (!game || game.state !== 'bounty-hunting') return;
+
+    clearTimers(game);
+
+    const locationCorrect = guess.location === game.currentLocation;
+    const targetRoleName = parseRole(game.bountyTarget.role).name;
+    const roleCorrect = guess.role === targetRoleName;
+
+    let score = 0;
+    let resultText = "การล่าค่าหัวสิ้นสุด!\n\n";
+
+    if (locationCorrect && roleCorrect) {
+        score = 3;
+        resultText += `สายลับทายถูกทั้งหมด! ได้รับ 3 คะแนน!`;
+    } else if (locationCorrect || roleCorrect) {
+        score = 1;
+        resultText += `สายลับทายถูก 1 อย่าง! ได้รับ 1 คะแนน`;
+        resultText += `\n- ทายสถานที่: ${locationCorrect ? 'ถูกต้อง' : 'ผิด'}`;
+        resultText += `\n- ทายบทบาท (${game.bountyTarget.name}): ${roleCorrect ? 'ถูกต้อง' : 'ผิด'}`;
+    } else {
+        resultText += `สายลับทายผิดทั้งหมด! ผู้เล่นทุกคน (ยกเว้นสายลับ) ได้รับ 1 คะแนน`;
+        game.players.forEach(p => {
+            if (p.id !== game.spy.id && !p.isSpectator && !p.disconnected) {
+                p.score++;
+            }
+        });
+    }
+
+    if (score > 0) {
+        game.spy.score += score;
+    }
+    
+    resultText += `\n\nบทบาทที่ถูกต้องของ ${game.bountyTarget.name} คือ "${targetRoleName}"`;
+
+    endGamePhase(roomCode, resultText, games, io);
+}
+
+
 module.exports = {
     generateRoomCode,
     startGame,
@@ -307,6 +386,8 @@ module.exports = {
     endRound,
     submitVote,
     spyGuessLocation,
+    initiateBountyHunt,
+    resolveBountyHunt,
     clearTimers
 };
 

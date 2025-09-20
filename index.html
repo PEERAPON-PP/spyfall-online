@@ -26,6 +26,14 @@
         .location-item.eliminated { text-decoration: line-through; opacity: 0.5; background-color: #fee2e2; }
         .vote-btn:disabled { background-color: #d1d5db; cursor: not-allowed; }
         .player-disconnected { opacity: 0.5; font-style: italic; }
+
+        .theme-spy { --main-color: #ef4444; --hover-color: #dc2626; --text-color: #991b1b; }
+        .theme-player { --main-color: #4f46e5; --hover-color: #4338ca; --text-color: #312e81; }
+
+        .game-header { color: var(--main-color); }
+        .timer-display { background-color: #e5e7eb; }
+        .theme-spy .timer-display { background-color: #fee2e2; }
+        .theme-player .timer-display { background-color: #e0e7ff; }
     </style>
 </head>
 <body class="bg-gray-100 text-gray-800 flex items-center justify-center min-h-screen p-4">
@@ -103,7 +111,7 @@
         </div>
 
         <div id="game-screen" class="hidden card">
-            <div class="flex justify-between items-center mb-2"><h2 class="text-3xl font-bold text-indigo-600">Spyfall</h2><div id="timer" class="text-2xl font-mono bg-gray-200 px-3 py-1 rounded-md">05:00</div></div>
+            <div class="flex justify-between items-center mb-2"><h2 id="game-header" class="text-3xl font-bold game-header">Spyfall</h2><div id="timer" class="text-2xl font-mono timer-display px-3 py-1 rounded-md">05:00</div></div>
             <div class="text-sm text-gray-500 mb-2">รอบที่ <span id="current-round">1</span> / <span id="total-rounds">5</span></div>
             <div id="game-content" class="text-center p-6 bg-gray-50 rounded-lg my-4 min-h-[150px] flex flex-col justify-center items-center"><p class="text-lg mb-2">สถานที่:</p><h3 id="location-display" class="text-2xl font-bold">???</h3><p id="role-label" class="text-sm mt-4 text-gray-500">บทบาท:</p><p id="role-display" class="text-lg font-semibold">???</p></div>
             <div id="ingame-actions" class="hidden"><button id="show-locations-btn" class="btn btn-secondary w-full">ดูรายชื่อสถานที่</button></div>
@@ -138,7 +146,7 @@
         const modals = { locations: $('locations-modal'), voting: $('voting-modal'), spyGuess: $('spy-guess-modal'), waitingForSpy: $('waiting-for-spy-modal'), endRound: $('end-round-modal'), rejoinAs: $('rejoin-as-modal') };
         const playerNameInput = $('player-name-input'), nameError = $('name-error'), createRoomBtn = $('create-room-btn'), roomCodeInput = $('room-code-input'), joinRoomBtn = $('join-room-btn');
         const lobbyRoomCode = $('lobby-room-code'), copyCodeBtn = $('copy-code-btn'), playerList = $('player-list'), startGameBtn = $('start-game-btn'), gameSettings = $('game-settings'), timerSelect = $('timer-select'), roundsSelect = $('rounds-select'), themeSelect = $('theme-select'), lobbyMessage = $('lobby-message'), voteTimerSelect = $('vote-timer-select');
-        const timerDisplay = $('timer'), locationDisplay = $('location-display'), roleDisplay = $('role-display'), ingameActions = $('ingame-actions'), showLocationsBtn = $('show-locations-btn'), currentRoundSpan = $('current-round'), totalRoundsSpan = $('total-rounds'), inGameScoreboard = $('in-game-scoreboard'), hostEndRoundBtn = $('host-end-round-btn'), roleLabel = $('role-label');
+        const timerDisplay = $('timer'), locationDisplay = $('location-display'), roleDisplay = $('role-display'), ingameActions = $('ingame-actions'), showLocationsBtn = $('show-locations-btn'), currentRoundSpan = $('current-round'), totalRoundsSpan = $('total-rounds'), inGameScoreboard = $('in-game-scoreboard'), hostEndRoundBtn = $('host-end-round-btn'), roleLabel = $('role-label'), gameHeader = $('game-header');
         const locationsList = $('locations-list'), closeLocationsBtn = $('close-locations-btn'), voteReason = $('vote-reason'), voteTimerDisplay = $('vote-timer'), votePlayerButtons = $('vote-player-buttons'), abstainVoteBtn = $('abstain-vote-btn');
         const spyLocationGuess = $('spy-location-guess'), confirmSpyGuessBtn = $('confirm-spy-guess-btn'), waitingSpyName = $('waiting-spy-name'), spyGuessTaunt = $('spy-guess-taunt'), waitingTaunt = $('waiting-taunt');
         const endModalTitle = $('end-modal-title'), endLocation = $('end-location'), endSpy = $('end-spy'), roundResultText = $('round-result-text'), nextRoundBtn = $('next-round-btn'), backToLobbyBtn = $('back-to-lobby-btn');
@@ -250,6 +258,15 @@
             abstainVoteBtn.disabled = true;
             // Timer will now continue to run based on server time
         }
+        
+        function setGameTheme(role) {
+            screens.game.classList.remove('theme-spy', 'theme-player');
+            if (role === 'สายลับ') {
+                screens.game.classList.add('theme-spy');
+            } else {
+                screens.game.classList.add('theme-player');
+            }
+        }
 
         // --- Event Listeners ---
         function handleSettingChange(event) {
@@ -318,6 +335,9 @@
             lobbyRoomCode.textContent = roomCode;
             localStorage.setItem('lastRoomCode', roomCode);
             showScreen(game.state === 'lobby' ? 'lobby' : 'game');
+            if (game.state !== 'lobby') {
+                setGameTheme(self.role);
+            }
         });
         socket.on('error', m => alert(m));
 
@@ -406,6 +426,7 @@
             currentRoundSpan.textContent = data.round;
             totalRoundsSpan.textContent = data.totalRounds;
             hostEndRoundBtn.classList.toggle('hidden', !currentClientIsHost || (self && self.isSpectator));
+            setGameTheme(data.role); // Set theme based on role
 
             if (self && self.isSpectator) {
                 locationDisplay.textContent = data.location;

@@ -117,8 +117,7 @@ function startNewRound(roomCode, games, io) {
         const { name } = parseRole(p.role);
         return { id: p.id, role: name };
     });
-    const allThemeLocationNames = availableLocations.map(l => l.name);
-
+    
     game.players.forEach(player => {
         const socket = io.sockets.sockets.get(player.socketId);
         if (socket) {
@@ -132,7 +131,8 @@ function startNewRound(roomCode, games, io) {
                 players: game.players,
                 isSpectator: player.isSpectator,
                 role: roleName,
-                roleDesc: roleDesc
+                roleDesc: roleDesc,
+                allLocationsData: availableLocations // Send full location data
             };
 
             if (player.isSpectator) {
@@ -140,14 +140,6 @@ function startNewRound(roomCode, games, io) {
                 payload.allPlayerRoles = allPlayerRoles;
             } else {
                 payload.location = isSpy ? 'ไม่ทราบ' : game.currentLocation;
-                let locationsForPlayer = allThemeLocationNames;
-                if (isSpy) {
-                   let shuffledLocations = [...allThemeLocationNames];
-                   shuffleArray(shuffledLocations);
-                   locationsForPlayer = shuffledLocations.slice(0, 20);
-                }
-                payload.allLocations = locationsForPlayer;
-
                 if (isSpy && game.bountyTarget) {
                     payload.bountyTargetName = game.bountyTarget.name;
                 }
@@ -260,7 +252,7 @@ function initiateSpyEscape(roomCode, reason, games, io) {
 
     game.specialTimer = setTimeout(() => {
         if(games[roomCode] && games[roomCode].state === 'spy-guessing'){
-            spyGuessLocation(roomCode, game.spy.socketId, null, games, io); // Timeout = wrong guess
+            spyGuessLocation(roomCode, game.spy.socketId, null, games, io);
         }
     }, 30 * 1000);
 }
@@ -272,7 +264,7 @@ function endGamePhase(roomCode, resultText, games, io) {
     game.state = 'post-round';
     io.to(roomCode).emit('roundOver', { 
         location: game.currentLocation, 
-        spyName: game.spy ? game.spy.name : 'ไม่มี', // CORRECTED THIS LINE
+        spyName: game.spy ? game.spy.name : 'ไม่มี',
         resultText, 
         isFinalRound: game.currentRound >= game.settings.rounds, 
         players: game.players 
@@ -318,12 +310,12 @@ function initiateBountyHunt(roomCode, games, io) {
     const spySocket = io.sockets.sockets.get(game.spy.socketId);
     
     if (spySocket) {
-        const locationOptions = getAvailableLocations(game.settings.themes).map(l => l.name);
-        const roleOptions = game.currentRoles.map(r => parseRole(r).name).filter(r => r !== 'สายลับ');
-        
+        let locationOptions = getAvailableLocations(game.settings.themes);
+        shuffleArray(locationOptions);
+        locationOptions = locationOptions.slice(0, 20);
+
         spySocket.emit('bountyHuntPhase', {
-            locations: locationOptions,
-            roles: roleOptions,
+            locations: locationOptions.map(l => l.name),
             targetName: game.bountyTarget.name,
             duration: 45
         });
@@ -382,6 +374,28 @@ function resolveBountyHunt(roomCode, guess, games, io) {
     endGamePhase(roomCode, resultText, games, io);
 }
 
+function sendGameStateToSpectator(game, player, io) {
+    const socket = io.sockets.sockets.get(player.socketId);
+    if (!socket) return;
+
+    const activePlayers = game.players.filter(p => !p.disconnected && !p.isSpectator);
+    const allPlayerRoles = activePlayers.map(p => {
+        const { name } = parseRole(p.role);
+        return { id: p.id, role: name };
+    });
+
+    socket.emit('gameStarted', {
+        location: game.currentLocation,
+        round: game.currentRound,
+        totalRounds: game.settings.rounds,
+        isHost: player.isHost,
+        players: game.players,
+        isSpectator: true,
+        allPlayerRoles,
+        allLocationsData: getAvailableLocations(game.settings.themes)
+    });
+}
+
 
 module.exports = {
     generateRoomCode,
@@ -392,6 +406,7 @@ module.exports = {
     spyGuessLocation,
     initiateBountyHunt,
     resolveBountyHunt,
+    sendGameStateToSpectator,
     clearTimers
 };
 

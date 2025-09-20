@@ -76,7 +76,9 @@ io.on('connection', (socket) => {
             playerSessions[playerToken] = { roomCode, playerId: player.id };
             
             socket.join(currentRoomCode);
+            // Crucially, emit rejoinSuccess to the specific socket that rejoined
             socket.emit('rejoinSuccess', { game, roomCode: currentRoomCode, self: player });
+            
             io.to(currentRoomCode).emit('playerReconnected', player.name);
             io.to(currentRoomCode).emit('updatePlayerList', game.players);
         } else {
@@ -89,7 +91,6 @@ io.on('connection', (socket) => {
         if (!game) return socket.emit('error', 'ไม่พบห้อง');
         
         currentRoomCode = roomCode;
-        // Join as a spectator, but will become a player next round
         const player = { id: uuidv4(), socketId: socket.id, name: playerName, isHost: false, score: 0, token: playerToken, isSpectator: true, disconnected: false };
         game.players.push(player);
         playerSessions[playerToken] = { roomCode, playerId: player.id };
@@ -99,54 +100,54 @@ io.on('connection', (socket) => {
         io.to(roomCode).emit('updatePlayerList', game.players);
     });
 
-    // NEW: Handle toggling spectator mode in the lobby
+    socket.on('startGame', ({ time, rounds, theme, voteTime }) => {
+        if (!currentRoomCode || !games[currentRoomCode]) return;
+        const game = games[currentRoomCode];
+        const self = game.players.find(p => p.socketId === socket.id);
+        if (!self || !self.isHost) return;
+        if (game.players.filter(p => !p.disconnected).length < 1) return;
+        
+        game.settings = { time: parseInt(time), rounds: parseInt(rounds), theme, voteTime: parseInt(voteTime) || 120 };
+        startNewRound(currentRoomCode);
+    });
+
     socket.on('toggleSpectatorMode', () => {
         if (!currentRoomCode || !games[currentRoomCode]) return;
         const game = games[currentRoomCode];
-        if (game.state !== 'lobby') return; // Can only toggle in lobby
-
         const player = game.players.find(p => p.socketId === socket.id);
-        if (player) {
+        if (player && !player.isHost) {
             player.isSpectator = !player.isSpectator;
             io.to(currentRoomCode).emit('updatePlayerList', game.players);
         }
     });
 
-    socket.on('startGame', ({ time, rounds, theme, voteTime }) => {
-        if (!currentRoomCode || !games[currentRoomCode]) return;
-        const game = games[currentRoomCode];
-        if (!game.players.find(p => p.socketId === socket.id && p.isHost)) return;
-        if (game.players.filter(p => !p.disconnected).length < 1) return;
-        game.settings = { time: parseInt(time), rounds: parseInt(rounds), theme, voteTime: parseInt(voteTime) || 120 };
-        startNewRound(currentRoomCode);
-    });
-
     socket.on('hostEndRound', () => { if (currentRoomCode && games[currentRoomCode]) { const game = games[currentRoomCode]; const p = game.players.find(pl => pl.socketId === socket.id); if (p && p.isHost && game.state === 'playing') endRound(currentRoomCode, "host_ended"); } });
     
     socket.on('submitVote', (votedPlayerId) => {
-        if (currentRoomCode && games[currentRoomCode]) {
-            const game = games[currentRoomCode];
-            const player = game.players.find(p => p.socketId === socket.id);
-            if (player && !player.isSpectator && ['voting', 'revoting'].includes(game.state)) {
-                game.votes[socket.id] = votedPlayerId;
-                const activePlayers = game.players.filter(p => !p.disconnected && !p.isSpectator);
-                if (Object.keys(game.votes).length === activePlayers.length) {
-                    clearTimeout(game.voteTimer);
-                    calculateVoteResults(currentRoomCode);
-                }
+        if (!currentRoomCode || !games[currentRoomCode]) return;
+        const game = games[currentRoomCode];
+        if (!['voting', 'revoting'].includes(game.state)) return;
+        
+        const player = game.players.find(p => p.socketId === socket.id);
+        if (player && !player.isSpectator) {
+            game.votes[socket.id] = votedPlayerId;
+            const playersWhoCanVote = game.players.filter(p => !p.disconnected && !p.isSpectator);
+            if (Object.keys(game.votes).length === playersWhoCanVote.length) {
+                clearTimeout(game.voteTimer);
+                calculateVoteResults(currentRoomCode);
             }
         }
     });
 
     socket.on('spyGuessLocation', (guessedLocation) => { if (currentRoomCode && games[currentRoomCode]) { const game = games[currentRoomCode]; if (game.state === 'spy-guessing' && socket.id === game.spy.socketId) { let resultText; if (guessedLocation === game.currentLocation) { game.spy.score++; resultText = `สายลับหนีรอด และตอบสถานที่ถูกต้อง!\nสายลับได้รับเพิ่มอีก 1 คะแนน! (รวมเป็น 2)`; } else { resultText = `สายลับหนีรอด! แต่ตอบสถานที่ผิด\nสายลับได้รับ 1 คะแนน`; } endGamePhase(currentRoomCode, resultText); } } });
-    socket.on('requestNextRound', () => { if (currentRoomCode && games[currentRoomCode]) { const game = games[currentRoomCode]; if (game.players.find(p => p.socketId === socket.id && p.isHost) && game.currentRound < game.settings.rounds) startNewRound(currentRoomCode); } });
-    socket.on('resetGame', () => { if (currentRoomCode && games[currentRoomCode]) { const game = games[currentRoomCode]; if (game.players.find(p => p.socketId === socket.id && p.isHost)) { game.state = 'lobby'; game.currentRound = 0; game.usedLocations = []; game.players.forEach(p => {p.score = 0; p.isSpectator = false;}); clearTimers(game); io.to(currentRoomCode).emit('returnToLobby'); io.to(currentRoomCode).emit('updatePlayerList', game.players); } } });
+    socket.on('requestNextRound', () => { if (currentRoomCode && games[currentRoomCode]) { const game = games[currentRoomCode]; const player = game.players.find(p => p.socketId === socket.id); if (player && player.isHost && game.currentRound < game.settings.rounds) startNewRound(currentRoomCode); } });
+    socket.on('resetGame', () => { if (currentRoomCode && games[currentRoomCode]) { const game = games[currentRoomCode]; const player = game.players.find(p => p.socketId === socket.id); if (player && player.isHost) { game.state = 'lobby'; game.currentRound = 0; game.usedLocations = []; game.players.forEach(p => p.score = 0); clearTimers(game); io.to(currentRoomCode).emit('returnToLobby'); io.to(currentRoomCode).emit('updatePlayerList', game.players); } } });
 
     socket.on('kickPlayer', (playerIdToKick) => {
         if (!currentRoomCode || !games[currentRoomCode]) return;
         const game = games[currentRoomCode];
         const host = game.players.find(p => p.isHost);
-        if (host.socketId !== socket.id) return;
+        if (!host || host.socketId !== socket.id) return;
         const playerIndex = game.players.findIndex(p => p.id === playerIdToKick);
         if (playerIndex > -1) {
             const kickedPlayer = game.players[playerIndex];
@@ -169,6 +170,8 @@ io.on('connection', (socket) => {
             player.disconnected = true;
             io.to(currentRoomCode).emit('playerDisconnected', player.name);
             io.to(currentRoomCode).emit('updatePlayerList', game.players);
+            
+            // Handle host leaving
             if (player.isHost) {
                 const newHost = game.players.find(p => !p.disconnected);
                 if (newHost) {
@@ -177,13 +180,15 @@ io.on('connection', (socket) => {
                     io.to(currentRoomCode).emit('updatePlayerList', game.players);
                 }
             }
+
+            // If all players are disconnected, clean up the game after a delay
             if (game.players.every(p => p.disconnected)) {
                 setTimeout(() => {
                     if (games[currentRoomCode] && games[currentRoomCode].players.every(p => p.disconnected)) {
                         clearTimers(games[currentRoomCode]);
                         delete games[currentRoomCode];
                     }
-                }, 60000); // 1 minute cleanup
+                }, 600000); // 10 minutes cleanup
             }
         }
     });
@@ -212,59 +217,66 @@ function startNewRound(roomCode) {
     clearTimers(game);
     game.state = 'playing'; game.currentRound++; game.votes = {}; game.revoteCandidates = [];
     
-    // Players who joined mid-game now become active players
+    // Convert any remaining spectators into players for the new round
     game.players.forEach(p => {
-        if (p.isSpectator && p.token) { // Ensure it's not a chosen spectator
-            // This logic might need refinement depending on whether "join as spectator" means permanent spectator for the game or just for the round. Assuming they become a player.
-        }
+        if (p.isSpectator) p.isSpectator = false;
     });
 
     const availableLocations = getAvailableLocations(game.settings.theme);
     if (game.usedLocations.length >= availableLocations.length) game.usedLocations = []; 
     let locationPool = availableLocations.filter(loc => !game.usedLocations.includes(loc.name));
     if (locationPool.length === 0) { game.usedLocations = []; locationPool = availableLocations; }
+    
     const location = locationPool[Math.floor(Math.random() * locationPool.length)];
     game.usedLocations.push(location.name); game.currentLocation = location.name;
     
-    const activePlayers = game.players.filter(p => !p.disconnected && !p.isSpectator);
-    const spectators = game.players.filter(p => !p.disconnected && p.isSpectator);
-
+    const activePlayers = game.players.filter(p => !p.disconnected);
+    const spectators = game.players.filter(p => p.disconnected);
     shuffleArray(activePlayers);
-    const spyIndex = activePlayers.length > 0 ? Math.floor(Math.random() * activePlayers.length) : -1;
-    let roles = [...location.roles]; 
-    shuffleArray(roles);
-
+    
+    const spyIndex = Math.floor(Math.random() * activePlayers.length);
+    let roles = [...location.roles]; shuffleArray(roles);
+    
     activePlayers.forEach((player, index) => {
         player.role = (index === spyIndex) ? 'สายลับ' : (roles.pop() || location.roles[0]);
         if (player.role === 'สายลับ') game.spy = player;
     });
 
-    const allPlayerRoles = activePlayers.map(p => ({id: p.id, name: p.name, role: p.role }));
-    
-    game.players.filter(p => !p.disconnected).forEach(player => {
+    const allPlayerRoles = activePlayers.map(p => ({id: p.id, role: p.role}));
+
+    // Emit to everyone in the room
+    game.players.forEach(player => {
         const socket = io.sockets.sockets.get(player.socketId);
         if (socket) {
-            const payload = {
-                round: game.currentRound,
-                totalRounds: game.settings.rounds,
-                isHost: player.isHost,
-                players: game.players,
-                isSpectator: player.isSpectator,
-            };
-            
             if (player.isSpectator) {
-                payload.location = game.currentLocation;
-                payload.allPlayerRoles = allPlayerRoles;
+                socket.emit('gameStarted', {
+                    location: game.currentLocation,
+                    role: null,
+                    round: game.currentRound,
+                    totalRounds: game.settings.rounds,
+                    isHost: player.isHost,
+                    players: game.players,
+                    isSpectator: true,
+                    allPlayerRoles
+                });
             } else {
-                payload.location = player.role === 'สายลับ' ? 'ไม่ทราบ' : game.currentLocation;
-                payload.role = player.role;
-                if (player.role === 'สายลับ') {
+                const spyLocations = (player.role === 'สายลับ') ? (() => {
                     const allLocNames = availableLocations.map(l => l.name);
                     shuffleArray(allLocNames);
-                    payload.allLocations = allLocNames.slice(0, 25);
-                }
+                    return allLocNames.slice(0, 25);
+                })() : null;
+
+                socket.emit('gameStarted', {
+                    location: player.role === 'สายลับ' ? 'ไม่ทราบ' : game.currentLocation,
+                    role: player.role,
+                    round: game.currentRound,
+                    totalRounds: game.settings.rounds,
+                    isHost: player.isHost,
+                    players: game.players,
+                    isSpectator: false,
+                    allLocations: spyLocations
+                });
             }
-            socket.emit('gameStarted', payload);
         }
     });
 
@@ -317,7 +329,7 @@ function startReVote(roomCode, candidateIds) {
 
 function calculateVoteResults(roomCode) {
     const game = games[roomCode];
-    if (!game || !['voting', 'revoting'].includes(game.state) || !game.spy) return;
+    if (!game || !['voting', 'revoting'].includes(game.state)) return;
 
     const spyId = game.spy.id;
     const voteCounts = {};
@@ -362,7 +374,7 @@ function calculateVoteResults(roomCode) {
 
 function spyEscapes(roomCode, reason) {
     const game = games[roomCode];
-    if (!game || !game.spy) return;
+    if (!game) return;
     game.spy.score++;
     game.state = 'spy-guessing';
 

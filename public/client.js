@@ -1,14 +1,13 @@
 // --- DOM Elements ---
 const $ = (id) => document.getElementById(id);
 const screens = { home: $('home-screen'), lobby: $('lobby-screen'), game: $('game-screen') };
-const modals = { locations: $('locations-modal'), voting: $('voting-modal'), spyGuess: $('spy-guess-modal'), waitingForSpy: $('waiting-for-spy-modal'), endRound: $('end-round-modal'), rejoinAs: $('rejoin-as-modal') };
+const modals = { locations: $('locations-modal'), voting: $('voting-modal'), spyGuess: $('spy-guess-modal'), waitingForSpy: $('waiting-for-spy-modal'), endRound: $('end-round-modal') }; // Removed rejoinAs
 const playerNameInput = $('player-name-input'), nameError = $('name-error'), createRoomBtn = $('create-room-btn'), roomCodeInput = $('room-code-input'), joinRoomBtn = $('join-room-btn');
 const lobbyRoomCode = $('lobby-room-code'), copyCodeBtn = $('copy-code-btn'), playerList = $('player-list'), startGameBtn = $('start-game-btn'), gameSettings = $('game-settings'), timerSelect = $('timer-select'), roundsSelect = $('rounds-select'), themeCheckboxes = $('theme-checkboxes'), lobbyMessage = $('lobby-message'), voteTimerSelect = $('vote-timer-select');
 const timerDisplay = $('timer'), locationDisplay = $('location-display'), roleDisplay = $('role-display'), roleDescDisplay = $('role-desc-display'), ingameActions = $('ingame-actions'), showLocationsBtn = $('show-locations-btn'), currentRoundSpan = $('current-round'), totalRoundsSpan = $('total-rounds'), inGameScoreboard = $('in-game-scoreboard'), hostEndRoundBtn = $('host-end-round-btn'), roleLabel = $('role-label'), gameHeader = $('game-header'), gameRoomCode = $('game-room-code');
 const locationsList = $('locations-list'), closeLocationsBtn = $('close-locations-btn'), voteReason = $('vote-reason'), voteTimerDisplay = $('vote-timer'), votePlayerButtons = $('vote-player-buttons'), abstainVoteBtn = $('abstain-vote-btn');
 const spyLocationGuess = $('spy-location-guess'), confirmSpyGuessBtn = $('confirm-spy-guess-btn'), waitingSpyName = $('waiting-spy-name'), spyGuessTaunt = $('spy-guess-taunt'), waitingTaunt = $('waiting-taunt');
 const endModalTitle = $('end-modal-title'), endLocation = $('end-location'), endSpy = $('end-spy'), roundResultText = $('round-result-text'), nextRoundBtn = $('next-round-btn'), backToLobbyBtn = $('back-to-lobby-btn');
-const rejoinAsModal = $('rejoin-as-modal'), rejoinPlayerList = $('rejoin-player-list'), joinAsSpectatorBtn = $('join-as-spectator-btn');
 
 let isHost = false, voteTimerInterval = null, playerToken = null;
 const socket = io();
@@ -43,7 +42,7 @@ function updateScoreboard(players, container, allPlayerRoles = null) {
         const nameSpan = document.createElement('span');
         const prefix = player.isHost ? '👑 ' : (player.isSpectator ? '👁️ ' : '');
         let statusText = '';
-        if (container === playerList && self && player.id === self.id && self.isSpectator === 'waiting') {
+        if (container === playerList && player.isSpectator === 'waiting') {
             statusText = ' (รอเล่นรอบถัดไป)';
         }
         nameSpan.innerHTML = `${prefix}${player.name}<span class="text-gray-500">${statusText}</span>`;
@@ -165,15 +164,6 @@ joinRoomBtn.addEventListener('click', () => {
     socket.emit('joinRoom', { playerName: n, roomCode: c, playerToken });
 });
 
-joinAsSpectatorBtn.addEventListener('click', () => {
-    const n = playerNameInput.value.trim();
-    const c = roomCodeInput.value.trim().toUpperCase();
-    if (!n || !c) return;
-    if (!playerToken) { playerToken = generateToken(); localStorage.setItem('playerToken', playerToken); }
-    socket.emit('joinAsSpectator', { roomCode: c, playerName: n, playerToken });
-    showModal(null);
-});
-
 copyCodeBtn.addEventListener('click', () => { navigator.clipboard.writeText(lobbyRoomCode.textContent).then(() => { copyCodeBtn.textContent = 'คัดลอกแล้ว!'; setTimeout(() => copyCodeBtn.textContent = 'คัดลอก', 2000); }); });
 startGameBtn.addEventListener('click', () => {
     const selectedThemes = Array.from(themeCheckboxes.querySelectorAll('input:checked')).map(cb => cb.dataset.theme);
@@ -243,7 +233,6 @@ socket.on('updatePlayerList', ({players, settings}) => {
         roundsSelect.value = settings.rounds;
         voteTimerSelect.value = settings.voteTime;
         
-        // Update theme checkboxes
         const allThemeCheckboxes = themeCheckboxes.querySelectorAll('input[type="checkbox"]');
         allThemeCheckboxes.forEach(cb => {
             cb.checked = settings.themes && settings.themes.includes(cb.dataset.theme);
@@ -282,40 +271,13 @@ socket.on('settingsUpdated', (settings) => {
     }
 });
 
-socket.on('promptRejoinOrSpectate', ({ disconnectedPlayers, roomCode }) => {
-    rejoinPlayerList.innerHTML = '';
-    const newPlayerName = playerNameInput.value.trim();
-    if (!newPlayerName) {
-        nameError.classList.remove('hidden');
-        alert('กรุณากรอกชื่อของคุณก่อนเลือกเข้าร่วมแทนผู้เล่นอื่น');
-        return;
-    }
-
-    if (disconnectedPlayers.length > 0) {
-        disconnectedPlayers.forEach(player => {
-            const button = document.createElement('button');
-            button.textContent = `เข้าร่วมแทน: ${player.name}`;
-            button.className = 'btn btn-primary w-full mb-2';
-            button.onclick = () => {
-                if (!playerToken) {
-                     playerToken = generateToken();
-                     localStorage.setItem('playerToken', playerToken);
-                }
-                socket.emit('rejoinAsPlayer', { roomCode, playerId: player.id, playerToken, newPlayerName });
-                showModal(null);
-            };
-            rejoinPlayerList.appendChild(button);
-        });
-    } else {
-        rejoinPlayerList.innerHTML = '<p class="text-center text-gray-500">ไม่พบผู้เล่นที่หลุดการเชื่อมต่อ</p>';
-    }
-    showModal('rejoinAs');
-});
+// REMOVED promptRejoinOrSpectate listener
 
 socket.on('joinSuccessAsSpectator', ({ roomCode }) => {
     showScreen('lobby');
     lobbyRoomCode.textContent = roomCode;
     localStorage.setItem('lastRoomCode', roomCode);
+    lobbyMessage.textContent = 'เกมกำลังดำเนินอยู่ คุณจะเข้าร่วมในรอบถัดไป';
 });
 
 socket.on('gameStarted', (data) => {

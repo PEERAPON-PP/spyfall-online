@@ -125,7 +125,17 @@ function initializeSocketHandlers(io) {
         socket.on('requestNextRound', () => {
             const { game, player } = getCurrentState();
             if (game && player && player.isHost && game.currentRound < game.settings.rounds) {
-                gameManager.startNewRound(socket.roomCode, games, io);
+                // Prevent race condition from double-clicking "Next Round" button
+                if (game.isStartingNextRound) return;
+                game.isStartingNextRound = true;
+
+                gameManager.startNewRound(socket.roomCode, games, io)
+                    .finally(() => {
+                        // Ensure the flag is always reset, even if an error occurs
+                        if (games[socket.roomCode]) {
+                           games[socket.roomCode].isStartingNextRound = false;
+                        }
+                    });
             }
         });
 

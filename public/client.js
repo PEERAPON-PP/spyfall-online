@@ -4,7 +4,7 @@ const screens = { home: $('home-screen'), lobby: $('lobby-screen'), game: $('gam
 const modals = { locations: $('locations-modal'), voting: $('voting-modal'), spyGuess: $('spy-guess-modal'), waitingForSpy: $('waiting-for-spy-modal'), endRound: $('end-round-modal'), rejoinAs: $('rejoin-as-modal') };
 const playerNameInput = $('player-name-input'), nameError = $('name-error'), createRoomBtn = $('create-room-btn'), roomCodeInput = $('room-code-input'), joinRoomBtn = $('join-room-btn');
 const lobbyRoomCode = $('lobby-room-code'), copyCodeBtn = $('copy-code-btn'), playerList = $('player-list'), startGameBtn = $('start-game-btn'), gameSettings = $('game-settings'), timerSelect = $('timer-select'), roundsSelect = $('rounds-select'), themeSelect = $('theme-select'), lobbyMessage = $('lobby-message'), voteTimerSelect = $('vote-timer-select');
-const timerDisplay = $('timer'), locationDisplay = $('location-display'), roleDisplay = $('role-display'), ingameActions = $('ingame-actions'), showLocationsBtn = $('show-locations-btn'), currentRoundSpan = $('current-round'), totalRoundsSpan = $('total-rounds'), inGameScoreboard = $('in-game-scoreboard'), hostEndRoundBtn = $('host-end-round-btn'), roleLabel = $('role-label'), gameHeader = $('game-header');
+const timerDisplay = $('timer'), locationDisplay = $('location-display'), roleDisplay = $('role-display'), roleDescDisplay = $('role-desc-display'), ingameActions = $('ingame-actions'), showLocationsBtn = $('show-locations-btn'), currentRoundSpan = $('current-round'), totalRoundsSpan = $('total-rounds'), inGameScoreboard = $('in-game-scoreboard'), hostEndRoundBtn = $('host-end-round-btn'), roleLabel = $('role-label'), gameHeader = $('game-header');
 const locationsList = $('locations-list'), closeLocationsBtn = $('close-locations-btn'), voteReason = $('vote-reason'), voteTimerDisplay = $('vote-timer'), votePlayerButtons = $('vote-player-buttons'), abstainVoteBtn = $('abstain-vote-btn');
 const spyLocationGuess = $('spy-location-guess'), confirmSpyGuessBtn = $('confirm-spy-guess-btn'), waitingSpyName = $('waiting-spy-name'), spyGuessTaunt = $('spy-guess-taunt'), waitingTaunt = $('waiting-taunt');
 const endModalTitle = $('end-modal-title'), endLocation = $('end-location'), endSpy = $('end-spy'), roundResultText = $('round-result-text'), nextRoundBtn = $('next-round-btn'), backToLobbyBtn = $('back-to-lobby-btn');
@@ -284,7 +284,9 @@ socket.on('gameStarted', (data) => {
     currentRoundSpan.textContent = data.round;
     totalRoundsSpan.textContent = data.totalRounds;
     hostEndRoundBtn.classList.toggle('hidden', !currentClientIsHost || (self && self.isSpectator));
-    setGameTheme(data.role); // Set theme based on role
+    setGameTheme(data.role);
+
+    roleDescDisplay.classList.add('hidden'); // Reset description
 
     if (self && self.isSpectator) {
         locationDisplay.textContent = data.location;
@@ -296,6 +298,10 @@ socket.on('gameStarted', (data) => {
         locationDisplay.textContent = data.location;
         roleLabel.textContent = "บทบาท:"
         roleDisplay.textContent = data.role;
+        if (data.roleDesc) {
+            roleDescDisplay.textContent = `"${data.roleDesc}"`;
+            roleDescDisplay.classList.remove('hidden');
+        }
         ingameActions.classList.remove('hidden');
         updateScoreboard(data.players, inGameScoreboard);
         if (data.allLocations) {
@@ -396,3 +402,4 @@ socket.on('kicked', () => { alert('คุณถูกเตะออกจาก
 socket.on('playerDisconnected', name => { lobbyMessage.textContent = `${name} หลุดออกจากเกม...`; });
 socket.on('playerReconnected', name => { lobbyMessage.textContent = `${name} กลับเข้าสู่เกม!`; });
 socket.on('newHost', name => { lobbyMessage.textContent = `${name} ได้เป็นหัวหน้าห้องคนใหม่`; });
+

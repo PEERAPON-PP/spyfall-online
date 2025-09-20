@@ -150,7 +150,7 @@
                 const nameSpan = document.createElement('span');
                 const prefix = player.isHost ? '👑 ' : (player.isSpectator ? '👁️ ' : '');
                 let statusText = '';
-                if (container === playerList && self && self.isSpectator && player.id === self.id && !player.isSpectator) {
+                if (container === playerList && self && player.id === self.id && self.isSpectator === 'waiting') {
                     statusText = ' (รอเล่นรอบถัดไป)';
                 }
                 nameSpan.innerHTML = `${prefix}${player.name}<span class="text-gray-500">${statusText}</span>`;
@@ -195,14 +195,23 @@
                 playerDiv.appendChild(rightDiv);
                 return playerDiv;
             };
+            
+            if(activePlayers.length > 0){
+                if(container === playerList){
+                    const p_divider = document.createElement('div');
+                    p_divider.className = 'text-center text-gray-500 text-sm py-1 font-semibold';
+                    p_divider.textContent = '--- ผู้เล่น ---';
+                    container.appendChild(p_divider);
+                }
+                activePlayers.forEach(player => container.appendChild(createPlayerRow(player)));
+            }
 
-            activePlayers.forEach(player => container.appendChild(createPlayerRow(player)));
 
             if (spectators.length > 0 && container === playerList) {
-                const divider = document.createElement('div');
-                divider.className = 'text-center text-gray-400 text-sm py-2';
-                divider.textContent = '--- ผู้ชม ---';
-                container.appendChild(divider);
+                const s_divider = document.createElement('div');
+                s_divider.className = 'text-center text-gray-500 text-sm py-1 font-semibold';
+                s_divider.textContent = '--- ผู้ชม ---';
+                container.appendChild(s_divider);
                 spectators.forEach(player => container.appendChild(createPlayerRow(player)));
             }
         }
@@ -212,10 +221,21 @@
             socket.emit('submitVote', playerId);
             votePlayerButtons.querySelectorAll('button').forEach(btn => btn.disabled = true);
             abstainVoteBtn.disabled = true;
-            if (voteTimerInterval) clearInterval(voteTimerInterval);
         }
 
         // --- Event Listeners ---
+        function handleSettingChange(event) {
+            if (isHost) {
+                const setting = event.target.dataset.setting;
+                const value = event.target.value;
+                socket.emit('settingChanged', { setting, value });
+            }
+        }
+        timerSelect.addEventListener('change', handleSettingChange);
+        roundsSelect.addEventListener('change', handleSettingChange);
+        voteTimerSelect.addEventListener('change', handleSettingChange);
+        themeSelect.addEventListener('change', handleSettingChange);
+
         createRoomBtn.addEventListener('click', () => {
             const n = playerNameInput.value.trim();
             if (!n) { nameError.classList.remove('hidden'); return; }
@@ -273,7 +293,7 @@
         });
         socket.on('error', m => alert(m));
 
-        socket.on('updatePlayerList', players => {
+        socket.on('updatePlayerList', ({players, settings}) => {
             const self = players.find(p => p.socketId === socket.id);
             const currentClientIsHost = self ? self.isHost : false;
             
@@ -282,6 +302,14 @@
 
             updateScoreboard(players, playerList);
             
+            // Update settings display
+            if (settings) {
+                timerSelect.value = settings.time;
+                roundsSelect.value = settings.rounds;
+                voteTimerSelect.value = settings.voteTime;
+                themeSelect.value = settings.theme;
+            }
+
             gameSettings.classList.remove('hidden');
             const settingInputs = gameSettings.querySelectorAll('select');
             settingInputs.forEach(input => input.disabled = !currentClientIsHost);
@@ -302,6 +330,15 @@
             }
         });
         
+        socket.on('settingsUpdated', (settings) => {
+             if (settings) {
+                timerSelect.value = settings.time;
+                roundsSelect.value = settings.rounds;
+                voteTimerSelect.value = settings.voteTime;
+                themeSelect.value = settings.theme;
+            }
+        });
+
         socket.on('promptRejoinOrSpectate', ({ disconnectedPlayers, roomCode }) => {
             rejoinPlayerList.innerHTML = '';
             if (disconnectedPlayers.length > 0) {
@@ -353,7 +390,7 @@
                 locationDisplay.textContent = data.location;
                 roleLabel.textContent = "บทบาท:"
                 roleDisplay.textContent = data.role;
-                ingameActions.classList.remove('hidden'); // Show for all players
+                ingameActions.classList.remove('hidden');
                 updateScoreboard(data.players, inGameScoreboard);
                 if (data.allLocations) {
                     locationsList.innerHTML = '';
@@ -372,10 +409,9 @@
             timerDisplay.textContent = `${String(Math.floor(timeLeft/60)).padStart(2,'0')}:${String(timeLeft%60).padStart(2,'0')}`;
             if (screens.game.offsetParent !== null) {
                 const self = players.find(p => p.socketId === socket.id);
-                // We need to know all roles to display them for the spectator
                 if (self && self.isSpectator) {
-                    // This part is tricky without changing server to send roles every update.
-                    // The scoreboard will just update scores for now.
+                    // Spectator role updates would require sending allPlayerRoles with timerUpdate.
+                    // For now, it just updates scores.
                 }
                 updateScoreboard(players, inGameScoreboard);
             }

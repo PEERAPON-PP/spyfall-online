@@ -90,7 +90,10 @@
         <!-- Game Screen -->
         <div id="game-screen" class="hidden card">
             <div class="flex justify-between items-center mb-2"><h2 id="game-header" class="text-3xl font-bold game-header">Spyfall</h2><div id="timer" class="text-2xl font-mono timer-display px-3 py-1 rounded-md">05:00</div></div>
-            <div class="text-sm text-gray-500 mb-2">รอบที่ <span id="current-round">1</span> / <span id="total-rounds">5</span></div>
+            <div class="flex justify-between items-center text-sm text-gray-500 mb-2">
+                <span>รอบที่ <span id="current-round">1</span> / <span id="total-rounds">5</span></span>
+                <span>รหัสห้อง: <strong id="game-room-code" class="font-mono"></strong></span>
+            </div>
             <div id="game-content" class="text-center p-6 bg-gray-50 rounded-lg my-4 min-h-[150px] flex flex-col justify-center items-center">
                 <p class="text-lg mb-2">สถานที่:</p>
                 <h3 id="location-display" class="text-2xl font-bold">???</h3>

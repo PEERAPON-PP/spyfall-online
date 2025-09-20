@@ -20,6 +20,7 @@ const TAUNTS = ["ว้าย! โหวตผิดเพราะไม่ส�
 
 function shuffleArray(array) { for (let i = array.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1));[array[i], array[j]] = [array[j], array[i]]; } }
 function parseRole(roleString) {
+    if (!roleString) return { name: '', description: null };
     const match = roleString.match(/^(.*?)\s*\((.*?)\)$/);
     return match ? { name: match[1].trim(), description: match[2].trim() } : { name: roleString, description: null };
 }
@@ -76,7 +77,10 @@ function startNewRound(roomCode, games, io) {
     game.spy = null;
     game.bountyTarget = null;
     
-    game.players.forEach(p => { if (p.isSpectator === 'waiting') p.isSpectator = false; });
+    game.players.forEach(p => { 
+        if (p.isSpectator === 'waiting') p.isSpectator = false;
+        delete p.role; // Clear roles from previous round
+    });
 
     const availableLocations = getAvailableLocations(game.settings.themes);
     if (!availableLocations || availableLocations.length === 0) {
@@ -121,28 +125,35 @@ function startNewRound(roomCode, games, io) {
     game.players.forEach(player => {
         const socket = io.sockets.sockets.get(player.socketId);
         if (socket) {
-            const { name: roleName, description: roleDesc } = parseRole(player.role);
-            const isSpy = roleName === 'สายลับ';
-            
             const payload = {
                 round: game.currentRound,
                 totalRounds: game.settings.rounds,
                 isHost: player.isHost,
                 players: game.players,
                 isSpectator: player.isSpectator,
-                role: roleName,
-                roleDesc: roleDesc,
-                allLocationsData: availableLocations // Send full location data
+                allLocationsData: availableLocations
             };
 
             if (player.isSpectator) {
                 payload.location = game.currentLocation;
                 payload.allPlayerRoles = allPlayerRoles;
-            } else {
+                payload.role = "ผู้ชม";
+            } else if (player.role) { // Only send role data if they are an active player
+                const { name: roleName, description: roleDesc } = parseRole(player.role);
+                const isSpy = roleName === 'สายลับ';
+                
+                payload.role = roleName;
+                payload.roleDesc = roleDesc;
                 payload.location = isSpy ? 'ไม่ทราบ' : game.currentLocation;
+
                 if (isSpy && game.bountyTarget) {
                     payload.bountyTargetName = game.bountyTarget.name;
                 }
+            } else {
+                // This case handles disconnected players who are not spectators
+                // They shouldn't get a gameStarted event, but if they do, provide safe defaults
+                payload.role = "Disconnected";
+                payload.location = "N/A";
             }
             socket.emit('gameStarted', payload);
         }

@@ -1,5 +1,15 @@
 const fs = require('fs');
 const path = require('path');
+const { GoogleGenerativeAI } = require("@google/generative-ai");
+
+// --- Gemini AI Setup ---
+let genAI;
+if (process.env.GEMINI_API_KEY) {
+    genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+    console.log("Gemini AI Initialized successfully.");
+} else {
+    console.warn("GEMINI_API_KEY not found. Gemini features will be disabled.");
+}
 
 let allLocations = [];
 try {
@@ -17,6 +27,36 @@ try {
 }
 
 const TAUNTS = ["ว้าย! โหวตผิดเพราะไม่สวยอะดิ", "เอิ้ก ๆ ๆ ๆ", "ชัดขนาดนี้!", "มองยังไงเนี่ย?", "ไปพักผ่อนบ้างนะ"];
+
+async function getSpyListFromGemini(correctLocation, allPossibleLocations, count) {
+    if (!genAI) return null; // Return null if Gemini is not configured
+
+    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+    const prompt = `You are a game master for the game Spyfall. Your task is to select a list of ${count} locations for the spy.
+    The correct location for this round is "${correctLocation}".
+    Here is the full list of all possible locations: ${JSON.stringify(allPossibleLocations)}.
+    
+    Please select ${count - 1} other locations from the list that are as different and distinct from "${correctLocation}" and from each other as possible to ensure fair and fun gameplay. Avoid locations that are thematically too similar (e.g., 'Hospital' and 'Pandemic').
+    The final list must contain exactly ${count} unique locations, including "${correctLocation}".
+    
+    Return your answer ONLY as a JSON object with a single key "locations" which is an array of the selected location strings. For example: {"locations": ["Location A", "Location B"]}`;
+
+    try {
+        const result = await model.generateContent(prompt);
+        const response = await result.response;
+        const text = response.text();
+        const jsonString = text.replace('```json', '').replace('```', '').trim();
+        const parsed = JSON.parse(jsonString);
+        if (parsed.locations && Array.isArray(parsed.locations) && parsed.locations.length === count) {
+            console.log("Successfully generated spy list with Gemini.");
+            return parsed.locations;
+        }
+    } catch (error) {
+        console.error("Error calling Gemini API:", error);
+    }
+    return null; // Return null on error
+}
+
 
 function shuffleArray(array) { for (let i = array.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1));[array[i], array[j]] = [array[j], array[i]]; } }
 function parseRole(roleString) {
@@ -50,7 +90,14 @@ function startGame(roomCode, settings, games, io) {
     if (game.players.filter(p => !p.disconnected && !p.isSpectator).length < 1) return;
     
     const { time, rounds, themes, voteTime, bountyHuntEnabled } = settings;
-    game.settings = { time: parseInt(time), rounds: parseInt(rounds), themes: themes || ['default'], voteTime: parseInt(voteTime) || 120, bountyHuntEnabled: bountyHuntEnabled };
+    game.settings = { 
+        time: parseInt(time), 
+        rounds: parseInt(rounds), 
+        themes: themes || ['default'], 
+        voteTime: parseInt(voteTime) || 120, 
+        bountyHuntEnabled: bountyHuntEnabled, 
+        useGemini: !!genAI 
+    };
     startNewRound(roomCode, games, io);
 }
 
@@ -66,7 +113,7 @@ function gameLoop(roomCode, games, io) {
     }
 }
 
-function startNewRound(roomCode, games, io) {
+async function startNewRound(roomCode, games, io) {
     const game = games[roomCode];
     if (!game) return;
     clearTimers(game);
@@ -76,7 +123,7 @@ function startNewRound(roomCode, games, io) {
     game.revoteCandidates = [];
     game.spy = null;
     game.bountyTarget = null;
-    game.spyLocationList = []; // Reset the list for the new round
+    game.spyLocationList = [];
     
     game.players.forEach(p => { 
         if (p.isSpectator === 'waiting') p.isSpectator = false;
@@ -123,7 +170,6 @@ function startNewRound(roomCode, games, io) {
         return { id: p.id, role: name };
     });
     
-    // --- START: NEW SPY LIST BALANCE LOGIC ---
     let spyListSize;
     const selectedThemes = game.settings.themes;
     const themeCount = selectedThemes.length;
@@ -134,11 +180,11 @@ function startNewRound(roomCode, games, io) {
         spyListSize = 18;
     } else if (themeCount === 1) {
         if (selectedThemes.includes('default')) {
-            spyListSize = 16;
-        } else { // fairytale or crisis
             spyListSize = 14;
+        } else {
+            spyListSize = 12;
         }
-    } else { // Should not happen, but as a fallback
+    } else {
         spyListSize = 20;
     }
     
@@ -147,15 +193,23 @@ function startNewRound(roomCode, games, io) {
         spyListSize = allThemeLocationNames.length;
     }
 
-    const sliceCount = spyListSize - 1;
-    let otherLocations = allThemeLocationNames.filter(name => name !== game.currentLocation);
-    shuffleArray(otherLocations);
-    
-    let spyList = otherLocations.slice(0, sliceCount);
-    spyList.push(game.currentLocation);
-    spyList.sort((a, b) => a.localeCompare('th')); // Sort alphabetically for Thai
-    game.spyLocationList = spyList; // Store the sorted list in the game state
-    // --- END: NEW SPY LIST BALANCE LOGIC ---
+    let spyList;
+    if (game.settings.useGemini) {
+        console.log("Attempting to generate spy list with Gemini...");
+        spyList = await getSpyListFromGemini(game.currentLocation, allThemeLocationNames, spyListSize);
+    }
+
+    if (!spyList) {
+        console.log("Gemini failed or is disabled, falling back to random generation.");
+        const sliceCount = spyListSize - 1;
+        let otherLocations = allThemeLocationNames.filter(name => name !== game.currentLocation);
+        shuffleArray(otherLocations);
+        spyList = otherLocations.slice(0, sliceCount);
+        spyList.push(game.currentLocation);
+    }
+
+    spyList.sort((a, b) => a.localeCompare(b, 'th'));
+    game.spyLocationList = spyList;
 
     game.players.forEach(player => {
         const socket = io.sockets.sockets.get(player.socketId);
@@ -181,7 +235,6 @@ function startNewRound(roomCode, games, io) {
                 payload.role = roleName;
                 payload.roleDesc = roleDesc;
                 payload.location = isSpy ? 'ไม่ทราบ' : game.currentLocation;
-                
                 payload.allLocations = isSpy ? game.spyLocationList : allThemeLocationNames;
 
                 if (isSpy && game.bountyTarget) {

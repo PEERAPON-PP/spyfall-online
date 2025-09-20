@@ -26,11 +26,9 @@ try {
     console.log(`Loaded ${allLocations.length} locations from ${locationFiles.length} files.`);
 } catch (error) {
     console.error("Could not load location files:", error);
-    // หากโหลดไฟล์ไม่ได้ ให้ใช้ข้อมูลว่างไปก่อนเพื่อไม่ให้เซิร์ฟเวอร์ล่ม
     allLocations = [];
 }
 // ---------------------------------------------------------
-
 
 app.use(express.static('public'));
 
@@ -48,6 +46,16 @@ function clearTimers(game) {
     game.timer = null;
     game.voteTimer = null;
 }
+
+// Function to parse role string into name and description
+function parseRole(roleString) {
+    const match = roleString.match(/^(.*?)\s*\((.*?)\)$/);
+    if (match) {
+        return { name: match[1].trim(), description: match[2].trim() };
+    }
+    return { name: roleString, description: null };
+}
+
 
 io.on('connection', (socket) => {
     let currentRoomCode = null;
@@ -256,7 +264,6 @@ function startNewRound(roomCode) {
     const availableLocations = getAvailableLocations(game.settings.theme);
     if (!availableLocations || availableLocations.length === 0) {
         console.error("No available locations for the selected theme:", game.settings.theme);
-        // Optionally, inform players
         io.to(roomCode).emit('error', 'ไม่พบสถานที่สำหรับโหมดที่เลือก');
         return;
     }
@@ -273,14 +280,15 @@ function startNewRound(roomCode) {
     
     if (activePlayers.length === 0) {
         console.log("No active players to start the round.");
-        return; // Don't start a round with no one playing
+        return;
     }
     
     const spyIndex = Math.floor(Math.random() * activePlayers.length);
     let roles = [...location.roles]; shuffleArray(roles);
     
     activePlayers.forEach((player, index) => {
-        player.role = (index === spyIndex) ? 'สายลับ' : (roles.pop() || "พลเมืองดี"); // Fallback role
+        const fullRoleString = (index === spyIndex) ? 'สายลับ' : (roles.pop() || "พลเมืองดี");
+        player.role = fullRoleString;
         if (player.role === 'สายลับ') game.spy = player;
     });
 
@@ -301,16 +309,19 @@ function startNewRound(roomCode) {
                     allPlayerRoles
                 });
             } else {
-                 let locationsForPlayer = allThemeLocationNames;
-                 if (player.role === 'สายลับ') {
-                    let shuffledLocations = [...allThemeLocationNames];
-                    shuffleArray(shuffledLocations);
-                    locationsForPlayer = shuffledLocations.slice(0, 20); // Spy sees a limited list
-                 }
+                let locationsForPlayer = allThemeLocationNames;
+                if (parseRole(player.role).name === 'สายลับ') {
+                   let shuffledLocations = [...allThemeLocationNames];
+                   shuffleArray(shuffledLocations);
+                   locationsForPlayer = shuffledLocations.slice(0, 20);
+                }
+                
+                const { name: roleName, description: roleDesc } = parseRole(player.role);
 
                 socket.emit('gameStarted', {
-                    location: player.role === 'สายลับ' ? 'ไม่ทราบ' : game.currentLocation,
-                    role: player.role,
+                    location: roleName === 'สายลับ' ? 'ไม่ทราบ' : game.currentLocation,
+                    role: roleName,
+                    roleDesc: roleDesc,
                     round: game.currentRound,
                     totalRounds: game.settings.rounds,
                     isHost: player.isHost,
@@ -445,7 +456,7 @@ function endGamePhase(roomCode, resultText) {
     const game = games[roomCode]; if (!game) return;
     clearTimers(game);
     game.state = 'post-round';
-    io.to(roomCode).emit('roundOver', { location: game.currentLocation, spyName: game.spy ? game.spy.name : 'ไม่มี', resultText, isFinalRound: game.currentRound >= game.settings.rounds, players: game.players });
+    io.to(roomCode).emit('roundOver', { location: game.currentLocation, spyName: game.spy ? parseRole(game.spy.role).name : 'ไม่มี', resultText, isFinalRound: game.currentRound >= game.settings.rounds, players: game.players });
 }
 
 const PORT = process.env.PORT || 3000;

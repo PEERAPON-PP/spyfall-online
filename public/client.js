@@ -3,7 +3,7 @@ const $ = (id) => document.getElementById(id);
 const screens = { home: $('home-screen'), lobby: $('lobby-screen'), game: $('game-screen') };
 const modals = { locations: $('locations-modal'), voting: $('voting-modal'), spyGuess: $('spy-guess-modal'), waitingForSpy: $('waiting-for-spy-modal'), endRound: $('end-round-modal'), rejoinAs: $('rejoin-as-modal') };
 const playerNameInput = $('player-name-input'), nameError = $('name-error'), createRoomBtn = $('create-room-btn'), roomCodeInput = $('room-code-input'), joinRoomBtn = $('join-room-btn');
-const lobbyRoomCode = $('lobby-room-code'), copyCodeBtn = $('copy-code-btn'), playerList = $('player-list'), startGameBtn = $('start-game-btn'), gameSettings = $('game-settings'), timerSelect = $('timer-select'), roundsSelect = $('rounds-select'), themeSelect = $('theme-select'), lobbyMessage = $('lobby-message'), voteTimerSelect = $('vote-timer-select');
+const lobbyRoomCode = $('lobby-room-code'), copyCodeBtn = $('copy-code-btn'), playerList = $('player-list'), startGameBtn = $('start-game-btn'), gameSettings = $('game-settings'), timerSelect = $('timer-select'), roundsSelect = $('rounds-select'), themeCheckboxes = $('theme-checkboxes'), lobbyMessage = $('lobby-message'), voteTimerSelect = $('vote-timer-select');
 const timerDisplay = $('timer'), locationDisplay = $('location-display'), roleDisplay = $('role-display'), roleDescDisplay = $('role-desc-display'), ingameActions = $('ingame-actions'), showLocationsBtn = $('show-locations-btn'), currentRoundSpan = $('current-round'), totalRoundsSpan = $('total-rounds'), inGameScoreboard = $('in-game-scoreboard'), hostEndRoundBtn = $('host-end-round-btn'), roleLabel = $('role-label'), gameHeader = $('game-header'), gameRoomCode = $('game-room-code');
 const locationsList = $('locations-list'), closeLocationsBtn = $('close-locations-btn'), voteReason = $('vote-reason'), voteTimerDisplay = $('vote-timer'), votePlayerButtons = $('vote-player-buttons'), abstainVoteBtn = $('abstain-vote-btn');
 const spyLocationGuess = $('spy-location-guess'), confirmSpyGuessBtn = $('confirm-spy-guess-btn'), waitingSpyName = $('waiting-spy-name'), spyGuessTaunt = $('spy-guess-taunt'), waitingTaunt = $('waiting-taunt');
@@ -133,10 +133,19 @@ function handleSettingChange(event) {
         socket.emit('settingChanged', { setting, value });
     }
 }
+
+function handleThemeChange() {
+    if(isHost) {
+        const selectedThemes = Array.from(themeCheckboxes.querySelectorAll('input:checked')).map(cb => cb.dataset.theme);
+        socket.emit('settingChanged', { setting: 'themes', value: selectedThemes });
+    }
+}
+
 timerSelect.addEventListener('change', handleSettingChange);
 roundsSelect.addEventListener('change', handleSettingChange);
 voteTimerSelect.addEventListener('change', handleSettingChange);
-themeSelect.addEventListener('change', handleSettingChange);
+themeCheckboxes.addEventListener('change', handleThemeChange);
+
 
 createRoomBtn.addEventListener('click', () => {
     const n = playerNameInput.value.trim();
@@ -166,7 +175,19 @@ joinAsSpectatorBtn.addEventListener('click', () => {
 });
 
 copyCodeBtn.addEventListener('click', () => { navigator.clipboard.writeText(lobbyRoomCode.textContent).then(() => { copyCodeBtn.textContent = 'คัดลอกแล้ว!'; setTimeout(() => copyCodeBtn.textContent = 'คัดลอก', 2000); }); });
-startGameBtn.addEventListener('click', () => socket.emit('startGame', { time: timerSelect.value, rounds: roundsSelect.value, theme: themeSelect.value, voteTime: voteTimerSelect.value }));
+startGameBtn.addEventListener('click', () => {
+    const selectedThemes = Array.from(themeCheckboxes.querySelectorAll('input:checked')).map(cb => cb.dataset.theme);
+    if(selectedThemes.length === 0){
+        alert("กรุณาเลือกโหมดอย่างน้อย 1 โหมด");
+        return;
+    }
+    socket.emit('startGame', { 
+        time: timerSelect.value, 
+        rounds: roundsSelect.value, 
+        themes: selectedThemes, 
+        voteTime: voteTimerSelect.value 
+    });
+});
 hostEndRoundBtn.addEventListener('click', () => socket.emit('hostEndRound'));
 abstainVoteBtn.addEventListener('click', () => submitVote(null));
 nextRoundBtn.addEventListener('click', () => { socket.emit('requestNextRound'); showModal(null); });
@@ -221,11 +242,16 @@ socket.on('updatePlayerList', ({players, settings}) => {
         timerSelect.value = settings.time;
         roundsSelect.value = settings.rounds;
         voteTimerSelect.value = settings.voteTime;
-        themeSelect.value = settings.theme;
+        
+        // Update theme checkboxes
+        const allThemeCheckboxes = themeCheckboxes.querySelectorAll('input[type="checkbox"]');
+        allThemeCheckboxes.forEach(cb => {
+            cb.checked = settings.themes && settings.themes.includes(cb.dataset.theme);
+        });
     }
 
     gameSettings.classList.remove('hidden');
-    const settingInputs = gameSettings.querySelectorAll('select');
+    const settingInputs = gameSettings.querySelectorAll('select, input[type="checkbox"]');
     settingInputs.forEach(input => input.disabled = !currentClientIsHost);
     
     if (currentClientIsHost) {
@@ -249,7 +275,10 @@ socket.on('settingsUpdated', (settings) => {
         timerSelect.value = settings.time;
         roundsSelect.value = settings.rounds;
         voteTimerSelect.value = settings.voteTime;
-        themeSelect.value = settings.theme;
+        const allThemeCheckboxes = themeCheckboxes.querySelectorAll('input[type="checkbox"]');
+        allThemeCheckboxes.forEach(cb => {
+            cb.checked = settings.themes && settings.themes.includes(cb.dataset.theme);
+        });
     }
 });
 

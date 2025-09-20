@@ -123,15 +123,40 @@ function startNewRound(roomCode, games, io) {
         return { id: p.id, role: name };
     });
     
-    const allThemeLocationNames = availableLocations.map(l => l.name);
+    // --- START: NEW SPY LIST BALANCE LOGIC ---
+    let spyListSize;
+    const selectedThemes = game.settings.themes;
+    const themeCount = selectedThemes.length;
 
-    // --- GENERATE AND STORE THE SPY'S LOCATION LIST ONCE PER ROUND ---
+    if (themeCount >= 3) {
+        spyListSize = 22;
+    } else if (themeCount === 2) {
+        spyListSize = 18;
+    } else if (themeCount === 1) {
+        if (selectedThemes.includes('default')) {
+            spyListSize = 14;
+        } else { // fairytale or crisis
+            spyListSize = 12;
+        }
+    } else { // Should not happen, but as a fallback
+        spyListSize = 20;
+    }
+    
+    const allThemeLocationNames = availableLocations.map(l => l.name);
+    // Ensure the list size doesn't exceed the total number of available locations
+    if (spyListSize > allThemeLocationNames.length) {
+        spyListSize = allThemeLocationNames.length;
+    }
+
+    const sliceCount = spyListSize - 1;
     let otherLocations = allThemeLocationNames.filter(name => name !== game.currentLocation);
     shuffleArray(otherLocations);
-    let spyList = otherLocations.slice(0, 19);
+    
+    let spyList = otherLocations.slice(0, sliceCount);
     spyList.push(game.currentLocation);
     shuffleArray(spyList);
     game.spyLocationList = spyList; // Store the list in the game state
+    // --- END: NEW SPY LIST BALANCE LOGIC ---
 
     game.players.forEach(player => {
         const socket = io.sockets.sockets.get(player.socketId);
@@ -158,14 +183,13 @@ function startNewRound(roomCode, games, io) {
                 payload.roleDesc = roleDesc;
                 payload.location = isSpy ? 'ไม่ทราบ' : game.currentLocation;
                 
-                // Use the stored list for the spy, or all locations for others (though client doesn't use it for non-spies)
                 payload.allLocations = isSpy ? game.spyLocationList : allThemeLocationNames;
 
                 if (isSpy && game.bountyTarget) {
                     payload.bountyTargetName = game.bountyTarget.name;
                 }
             } else {
-                return; // Don't send gameStarted to disconnected players
+                return;
             }
             socket.emit('gameStarted', payload);
         }
@@ -261,7 +285,6 @@ function initiateSpyEscape(roomCode, reason, games, io) {
     const taunt = TAUNTS[Math.floor(Math.random() * TAUNTS.length)];
     
     const spySocket = io.sockets.sockets.get(game.spy.socketId);
-    // Use the stored list from the start of the round
     if(spySocket) spySocket.emit('spyGuessPhase', { locations: game.spyLocationList, taunt: `${reason} ${taunt}`, duration: 60 });
 
     game.players.forEach(p => {
@@ -331,7 +354,6 @@ function initiateBountyHunt(roomCode, games, io) {
     const spySocket = io.sockets.sockets.get(game.spy.socketId);
     
     if (spySocket) {
-        // Use the stored list from the start of the round
         spySocket.emit('bountyHuntPhase', {
             locations: game.spyLocationList,
             targetName: game.bountyTarget.name,

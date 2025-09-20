@@ -134,9 +134,9 @@ function startNewRound(roomCode, games, io) {
         spyListSize = 18;
     } else if (themeCount === 1) {
         if (selectedThemes.includes('default')) {
-            spyListSize = 14;
+            spyListSize = 16;
         } else { // fairytale or crisis
-            spyListSize = 12;
+            spyListSize = 14;
         }
     } else { // Should not happen, but as a fallback
         spyListSize = 20;

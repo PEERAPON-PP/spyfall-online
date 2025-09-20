@@ -10,7 +10,8 @@ const io = socketIo(server, {
 });
 
 const locationsData = require('./locations.json');
-app.use(express.static(__dirname));
+// Make sure to serve files from the 'public' folder
+app.use(express.static('public'));
 
 const games = {};
 const playerSessions = {}; // For rejoin system
@@ -90,7 +91,7 @@ io.on('connection', (socket) => {
         if (!game) return socket.emit('error', 'ไม่พบห้อง');
         
         currentRoomCode = roomCode;
-        const player = { id: uuidv4(), socketId: socket.id, name: playerName, isHost: false, score: 0, token: playerToken, isSpectator: true, disconnected: false };
+        const player = { id: uuidv4(), socketId: socket.id, name: playerName, isHost: false, score: 0, token: playerToken, isSpectator: 'waiting', disconnected: false };
         game.players.push(player);
         playerSessions[playerToken] = { roomCode, playerId: player.id };
         
@@ -417,4 +418,3 @@ function endGamePhase(roomCode, resultText) {
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => console.log(`Server is running on port ${PORT}`));
-

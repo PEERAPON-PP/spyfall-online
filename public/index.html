@@ -18,7 +18,7 @@
             <h1 class="text-4xl font-bold text-center mb-6 text-indigo-600">Spyfall</h1>
            <div class="space-y-6">
               <div class="card">
-                <h2 class="text-xl font-semibold text-gray-700 mb-3">ตั้งชื่อ</h2>
+                <h2 class="text-xl font-semibold text-gray-700 mb-3">ตั้งชื่อเล่น</h2>
                 <input type="text" id="player-name-input" placeholder="ใส่ชื่อผู้เล่น..." class="input-field">
                 <p id="name-error" class="text-red-500 text-sm mt-2 hidden">กรุณาตั้งชื่อก่อนเข้าร่วมห้อง</p>
               </div>
@@ -45,7 +45,7 @@
                     <div>
                         <label for="timer-select" class="block text-sm font-medium">เวลาเล่นต่อรอบ:</label>
                         <select id="timer-select" data-setting="time" class="input-field w-full">
-                            <option value="10">10 วินาที</option>
+                            <option value="30">30 วินาที</option>
                             <option value="180">3 นาที</option>
                             <option value="300" selected>5 นาที</option>
                             <option value="480">8 นาที</option>
@@ -57,17 +57,16 @@
                         <label for="rounds-select" class="block text-sm font-medium">รอบ:</label>
                         <select id="rounds-select" data-setting="rounds" class="input-field w-full">
                             <option value="1">1</option>
-                            <option value="2">2</option>
                             <option value="3">3</option>
                             <option value="5" selected>5</option>
                             <option value="7">7</option>
+                            <option value="10">10</option>
                         </select>
                     </div>
                  </div>
                  <div class="mb-4">
                     <label for="vote-timer-select" class="block text-sm font-medium">เวลาโหวตต่อรอบ:</label>
                     <select id="vote-timer-select" data-setting="voteTime" class="input-field w-full">
-                        <option value="10">10 วินาที</option>
                         <option value="30">30 วินาที</option>
                         <option value="60">1 นาที</option>
                         <option value="90">1 นาที 30 วินาที</option>
@@ -75,7 +74,7 @@
                     </select>
                 </div>
                  <div class="mb-4">
-                    <label class="block text-sm font-medium mb-2">เลือกโหมด (เลือกได้หลายอัน):</label>
+                    <label class="block text-sm font-medium mb-2">เลือกโหมด:</label>
                     <div id="theme-checkboxes" class="space-y-2">
                         <label class="flex items-center"><input type="checkbox" data-theme="default" class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" checked> <span class="ml-2 text-gray-700">สถานที่ทั่วไป</span></label>
                         <label class="flex items-center"><input type="checkbox" data-theme="fairytale" class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"> <span class="ml-2 text-gray-700">สถานที่นิทาน</span></label>

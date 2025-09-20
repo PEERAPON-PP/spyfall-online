@@ -57,7 +57,7 @@ function initializeSocketHandlers(io) {
                 const oldName = playerToTakeOver.name;
 
                 socket.roomCode = roomCode;
-                playerToTakeOver.socketId = socket.id; // CRITICAL: Update the socket ID
+                playerToTakeOver.socketId = socket.id;
                 playerToTakeOver.disconnected = false;
                 playerToTakeOver.token = playerToken;
                 playerToTakeOver.name = newPlayerName;
@@ -172,51 +172,50 @@ function initializeSocketHandlers(io) {
         });
 
         socket.on('disconnect', () => {
-            let playerFound = null;
-            let roomCodeFound = null;
+            // Introduce a delay to handle race conditions on quick reconnects
+            setTimeout(() => {
+                let playerFound = null;
+                let roomCodeFound = null;
 
-            // Find which player this disconnecting socket belonged to
-            for (const rc in games) {
-                const p = games[rc].players.find(player => player.socketId === socket.id);
-                if (p) {
-                    playerFound = p;
-                    roomCodeFound = rc;
-                    break;
-                }
-            }
-
-            // If we found a player associated with this specific socket connection
-            if (playerFound && roomCodeFound) {
-                const game = games[roomCodeFound];
-                
-                // This is the correct way to handle disconnect.
-                // We only mark them as disconnected. We don't remove them.
-                // The 'rejoinAsPlayer' will handle reconnecting.
-                playerFound.disconnected = true;
-                
-                io.to(roomCodeFound).emit('playerDisconnected', playerFound.name);
-                io.to(roomCodeFound).emit('updatePlayerList', { players: game.players, settings: game.settings });
-
-                if (playerFound.isHost) {
-                    const newHost = game.players.find(p => !p.disconnected);
-                    if (newHost) {
-                        newHost.isHost = true;
-                        io.to(roomCodeFound).emit('newHost', newHost.name);
-                        io.to(roomCodeFound).emit('updatePlayerList', { players: game.players, settings: game.settings });
+                // Find which player this disconnecting socket belonged to
+                for (const rc in games) {
+                    const p = games[rc].players.find(player => player.socketId === socket.id);
+                    if (p) {
+                        playerFound = p;
+                        roomCodeFound = rc;
+                        break;
                     }
                 }
 
-                if (game.players.every(p => p.disconnected)) {
-                    setTimeout(() => {
-                        if (games[roomCodeFound] && games[roomCodeFound].players.every(p => p.disconnected)) {
-                            gameManager.clearTimers(games[roomCodeFound]);
-                            delete games[roomCodeFound];
+                // If a player is found, it means this socket ID is still the *current* one for that player.
+                // This prevents a "ghost" disconnect from an old session marking a reconnected player as disconnected.
+                if (playerFound && roomCodeFound) {
+                    const game = games[roomCodeFound];
+                    
+                    playerFound.disconnected = true;
+                    
+                    io.to(roomCodeFound).emit('playerDisconnected', playerFound.name);
+                    io.to(roomCodeFound).emit('updatePlayerList', { players: game.players, settings: game.settings });
+
+                    if (playerFound.isHost) {
+                        const newHost = game.players.find(p => !p.disconnected);
+                        if (newHost) {
+                            newHost.isHost = true;
+                            io.to(roomCodeFound).emit('newHost', newHost.name);
+                            io.to(roomCodeFound).emit('updatePlayerList', { players: game.players, settings: game.settings });
                         }
-                    }, 600000);
+                    }
+
+                    if (game.players.every(p => p.disconnected)) {
+                        setTimeout(() => {
+                            if (games[roomCodeFound] && games[roomCodeFound].players.every(p => p.disconnected)) {
+                                gameManager.clearTimers(games[roomCodeFound]);
+                                delete games[roomCodeFound];
+                            }
+                        }, 600000);
+                    }
                 }
-            }
-            // If no player is found for this socket.id, it's a "ghost" disconnect from a stale session.
-            // This happens during a quick rejoin. We can safely ignore it.
+            }, 1500); // 1.5 second delay
         });
     });
 }

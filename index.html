@@ -79,7 +79,7 @@
             <div class="flex justify-between items-center mb-2"><h2 class="text-3xl font-bold text-indigo-600">Spyfall</h2><div id="timer" class="text-2xl font-mono bg-gray-200 px-3 py-1 rounded-md">05:00</div></div>
             <div class="text-sm text-gray-500 mb-2">รอบที่ <span id="current-round">1</span> / <span id="total-rounds">5</span></div>
             <div id="game-content" class="text-center p-6 bg-gray-50 rounded-lg my-4 min-h-[150px] flex flex-col justify-center items-center"><p class="text-lg mb-2">สถานที่:</p><h3 id="location-display" class="text-2xl font-bold">???</h3><p id="role-label" class="text-sm mt-4 text-gray-500">บทบาท:</p><p id="role-display" class="text-lg font-semibold">???</p></div>
-            <div id="spy-actions" class="hidden"><button id="show-locations-btn" class="btn btn-secondary w-full">ดูรายชื่อสถานที่</button></div>
+            <div id="ingame-actions" class="hidden"><button id="show-locations-btn" class="btn btn-secondary w-full">ดูรายชื่อสถานที่</button></div>
             <div class="border-t pt-4 mt-4">
                 <h3 class="font-semibold text-center mb-2">ผู้เล่นและคะแนน</h3>
                 <div id="in-game-scoreboard" class="space-y-1 text-sm"></div>
@@ -111,7 +111,7 @@
         const modals = { locations: $('locations-modal'), voting: $('voting-modal'), spyGuess: $('spy-guess-modal'), waitingForSpy: $('waiting-for-spy-modal'), endRound: $('end-round-modal'), rejoinAs: $('rejoin-as-modal') };
         const playerNameInput = $('player-name-input'), nameError = $('name-error'), createRoomBtn = $('create-room-btn'), roomCodeInput = $('room-code-input'), joinRoomBtn = $('join-room-btn');
         const lobbyRoomCode = $('lobby-room-code'), copyCodeBtn = $('copy-code-btn'), playerList = $('player-list'), startGameBtn = $('start-game-btn'), gameSettings = $('game-settings'), timerSelect = $('timer-select'), roundsSelect = $('rounds-select'), themeSelect = $('theme-select'), lobbyMessage = $('lobby-message'), voteTimerSelect = $('vote-timer-select');
-        const timerDisplay = $('timer'), locationDisplay = $('location-display'), roleDisplay = $('role-display'), spyActions = $('spy-actions'), showLocationsBtn = $('show-locations-btn'), currentRoundSpan = $('current-round'), totalRoundsSpan = $('total-rounds'), inGameScoreboard = $('in-game-scoreboard'), hostEndRoundBtn = $('host-end-round-btn'), roleLabel = $('role-label');
+        const timerDisplay = $('timer'), locationDisplay = $('location-display'), roleDisplay = $('role-display'), ingameActions = $('ingame-actions'), showLocationsBtn = $('show-locations-btn'), currentRoundSpan = $('current-round'), totalRoundsSpan = $('total-rounds'), inGameScoreboard = $('in-game-scoreboard'), hostEndRoundBtn = $('host-end-round-btn'), roleLabel = $('role-label');
         const locationsList = $('locations-list'), closeLocationsBtn = $('close-locations-btn'), voteReason = $('vote-reason'), voteTimerDisplay = $('vote-timer'), votePlayerButtons = $('vote-player-buttons'), abstainVoteBtn = $('abstain-vote-btn');
         const spyLocationGuess = $('spy-location-guess'), confirmSpyGuessBtn = $('confirm-spy-guess-btn'), waitingSpyName = $('waiting-spy-name'), spyGuessTaunt = $('spy-guess-taunt'), waitingTaunt = $('waiting-taunt');
         const endModalTitle = $('end-modal-title'), endLocation = $('end-location'), endSpy = $('end-spy'), roundResultText = $('round-result-text'), nextRoundBtn = $('next-round-btn'), backToLobbyBtn = $('back-to-lobby-btn');
@@ -126,18 +126,19 @@
         
         function updateScoreboard(players, container, allPlayerRoles = null) {
             container.innerHTML = '';
-            const sortedPlayers = [...players].sort((a, b) => b.score - a.score);
 
             const self = players.find(p => p.socketId === socket.id);
             const currentClientIsHost = self ? self.isHost : false;
+            
+            const activePlayers = players.filter(p => !p.isSpectator).sort((a, b) => b.score - a.score);
+            const spectators = players.filter(p => p.isSpectator).sort((a, b) => b.score - a.score);
 
-            sortedPlayers.forEach(player => {
+            const createPlayerRow = (player) => {
                 const playerDiv = document.createElement('div');
                 playerDiv.className = 'flex justify-between items-center bg-gray-100 p-2 rounded';
                 
                 if (player.disconnected) playerDiv.classList.add('player-disconnected');
 
-                // Highlight the current player's own row
                 if (self && player.id === self.id) {
                     playerDiv.classList.remove('bg-gray-100');
                     playerDiv.classList.add('bg-indigo-100', 'border', 'border-indigo-300');
@@ -147,21 +148,22 @@
                 leftDiv.className = 'flex-grow flex items-center space-x-2';
 
                 const nameSpan = document.createElement('span');
-                const crown = player.isHost ? '👑 ' : '';
+                const prefix = player.isHost ? '👑 ' : (player.isSpectator ? '👁️ ' : '');
                 let statusText = '';
-                if (player.isSpectator) {
-                    statusText = ' (ผู้ชม)';
-                } else if (container === playerList && self && self.isSpectator && player.id === self.id) {
+                if (container === playerList && self && self.isSpectator && player.id === self.id && !player.isSpectator) {
                     statusText = ' (รอเล่นรอบถัดไป)';
                 }
-                nameSpan.innerHTML = `${crown}${player.name}<span class="text-gray-500">${statusText}</span>`;
+                nameSpan.innerHTML = `${prefix}${player.name}<span class="text-gray-500">${statusText}</span>`;
                 leftDiv.appendChild(nameSpan);
 
                 if (allPlayerRoles) {
                     const roleSpan = document.createElement('span');
                     roleSpan.className = 'text-sm';
-                    roleSpan.innerHTML = `- <span class="font-semibold text-indigo-600">${allPlayerRoles.find(r => r.id === player.id)?.role || ''}</span>`;
-                    leftDiv.appendChild(roleSpan);
+                    const playerRole = allPlayerRoles.find(r => r.id === player.id)?.role;
+                    if (playerRole) {
+                       roleSpan.innerHTML = `- <span class="font-semibold text-indigo-600">${playerRole}</span>`;
+                       leftDiv.appendChild(roleSpan);
+                    }
                 }
 
                 const rightDiv = document.createElement('div');
@@ -191,8 +193,18 @@
                 
                 playerDiv.appendChild(leftDiv);
                 playerDiv.appendChild(rightDiv);
-                container.appendChild(playerDiv);
-            });
+                return playerDiv;
+            };
+
+            activePlayers.forEach(player => container.appendChild(createPlayerRow(player)));
+
+            if (spectators.length > 0 && container === playerList) {
+                const divider = document.createElement('div');
+                divider.className = 'text-center text-gray-400 text-sm py-2';
+                divider.textContent = '--- ผู้ชม ---';
+                container.appendChild(divider);
+                spectators.forEach(player => container.appendChild(createPlayerRow(player)));
+            }
         }
         function generateToken() { return ([1e7]+-1e3+-4e3+-8e3+-1e11).replace(/[018]/g, c => (c ^ crypto.getRandomValues(new Uint8Array(1))[0] & 15 >> c / 4).toString(16)); }
         
@@ -275,7 +287,7 @@
             settingInputs.forEach(input => input.disabled = !currentClientIsHost);
             
             if (currentClientIsHost) {
-                const activePlayers = players.filter(p => !p.disconnected).length;
+                const activePlayers = players.filter(p => !p.disconnected && !p.isSpectator).length;
                 const canStart = activePlayers >= 1;
                 startGameBtn.classList.remove('hidden');
                 startGameBtn.disabled = !canStart;
@@ -335,20 +347,20 @@
                 locationDisplay.textContent = data.location;
                 roleLabel.textContent = "สถานะ:"
                 roleDisplay.textContent = "คุณเป็นผู้ชม";
-                spyActions.classList.add('hidden');
+                ingameActions.classList.add('hidden');
                 updateScoreboard(data.players, inGameScoreboard, data.allPlayerRoles);
             } else {
                 locationDisplay.textContent = data.location;
                 roleLabel.textContent = "บทบาท:"
                 roleDisplay.textContent = data.role;
-                spyActions.classList.toggle('hidden', data.role !== 'สายลับ');
+                ingameActions.classList.remove('hidden'); // Show for all players
                 updateScoreboard(data.players, inGameScoreboard);
                 if (data.allLocations) {
                     locationsList.innerHTML = '';
                     data.allLocations.forEach(loc => {
                         const div = document.createElement('div');
                         div.textContent = loc;
-                        div.className = 'p-2 bg-gray-100 rounded location-item';
+                        div.className = 'p-2 bg-gray-100 rounded location-item font-bold';
                         div.onclick = () => div.classList.toggle('eliminated');
                         locationsList.appendChild(div);
                     });
@@ -359,8 +371,12 @@
         socket.on('timerUpdate', ({ timeLeft, players }) => {
             timerDisplay.textContent = `${String(Math.floor(timeLeft/60)).padStart(2,'0')}:${String(timeLeft%60).padStart(2,'0')}`;
             if (screens.game.offsetParent !== null) {
-                // To show roles for spectators during the game, we would need allPlayerRoles here.
-                // For simplicity, we are not updating roles mid-game for now.
+                const self = players.find(p => p.socketId === socket.id);
+                // We need to know all roles to display them for the spectator
+                if (self && self.isSpectator) {
+                    // This part is tricky without changing server to send roles every update.
+                    // The scoreboard will just update scores for now.
+                }
                 updateScoreboard(players, inGameScoreboard);
             }
         });
@@ -415,8 +431,12 @@
             
             if (isFinalRound) {
                 endModalTitle.textContent = "จบเกม!";
-                const winner = [...players].sort((a,b) => b.score - a.score)[0];
-                resultMessage += `\n\n🏆 ผู้ชนะคือ ${winner.name} ด้วยคะแนน ${winner.score} คะแนน!`;
+                const winner = [...players].filter(p=>!p.isSpectator).sort((a,b) => b.score - a.score)[0];
+                if(winner){
+                    resultMessage += `\n\n🏆 ผู้ชนะคือ ${winner.name} ด้วยคะแนน ${winner.score} คะแนน!`;
+                } else {
+                    resultMessage += `\n\nจบเกมแล้ว!`;
+                }
                 nextRoundBtn.classList.add('hidden');
                 backToLobbyBtn.classList.toggle('hidden', !currentClientIsHost);
                 localStorage.removeItem('lastRoomCode');

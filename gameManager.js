@@ -69,43 +69,6 @@ function getAvailableLocations(themes) {
     return allLocations.filter(loc => themes.includes(loc.category));
 }
 
-// New helper function to create a balanced location deck
-function createBalancedDeck(themes) {
-    const availableLocations = getAvailableLocations(themes);
-    if (!themes || themes.length <= 1) {
-        shuffleArray(availableLocations);
-        return availableLocations;
-    }
-
-    const locationsByCategory = {};
-    themes.forEach(theme => {
-        locationsByCategory[theme] = [];
-    });
-    availableLocations.forEach(location => {
-        if (locationsByCategory[location.category]) {
-            locationsByCategory[location.category].push(location);
-        }
-    });
-
-    Object.values(locationsByCategory).forEach(list => shuffleArray(list));
-
-    const balancedDeck = [];
-    const categoryLists = Object.values(locationsByCategory).filter(list => list.length > 0);
-    let maxLength = 0;
-    categoryLists.forEach(list => {
-        if (list.length > maxLength) maxLength = list.length;
-    });
-
-    for (let i = 0; i < maxLength; i++) {
-        for (const list of categoryLists) {
-            if (i < list.length) {
-                balancedDeck.push(list[i]);
-            }
-        }
-    }
-    return balancedDeck;
-}
-
 function generateRoomCode(games) {
     let code;
     do { code = Math.random().toString(36).substring(2, 6).toUpperCase(); } while (games[code]);
@@ -136,7 +99,11 @@ function startGame(roomCode, settings, games, io) {
         useGemini: !!genAI 
     };
 
-    game.locationDeck = createBalancedDeck(game.settings.themes);
+    // Create a simple, shuffled deck from all selected themes
+    const allGameLocations = getAvailableLocations(game.settings.themes);
+    shuffleArray(allGameLocations);
+    game.locationDeck = allGameLocations;
+
     startNewRound(roomCode, games, io);
 }
 
@@ -170,18 +137,19 @@ async function startNewRound(roomCode, games, io) {
     });
 
     if (!game.locationDeck || game.locationDeck.length === 0) {
-        console.log("Location deck is empty, creating a new balanced one...");
-        game.locationDeck = createBalancedDeck(game.settings.themes);
-        if(game.locationDeck.length === 0) {
-             io.to(roomCode).emit('error', 'ไม่พบสถานที่สำหรับโหมดที่เลือก');
-             return;
+        console.log("Location deck is empty, reshuffling all available locations...");
+        const allGameLocations = getAvailableLocations(game.settings.themes);
+        if (allGameLocations.length === 0) {
+            io.to(roomCode).emit('error', 'ไม่พบสถานที่สำหรับโหมดที่เลือก');
+            return;
         }
+        shuffleArray(allGameLocations);
+        game.locationDeck = allGameLocations;
     }
 
     const location = game.locationDeck.pop();
     if (!location) {
         io.to(roomCode).emit('error', 'เกิดข้อผิดพลาด: ไม่สามารถเลือกสถานที่ได้');
-        // Potentially reset the lobby or handle the error state
         return;
     }
     game.currentLocation = location.name;

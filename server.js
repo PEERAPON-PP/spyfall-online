@@ -226,8 +226,6 @@ function startNewRound(roomCode) {
     clearTimers(game);
     game.state = 'playing'; game.currentRound++; game.votes = {}; game.revoteCandidates = [];
     
-    // Convert waiting spectators to players, but keep chosen spectators as they are.
-    // This logic relies on the player toggling their own status in the lobby.
     game.players.forEach(p => {
         if(p.isSpectator === 'waiting'){
             p.isSpectator = false;
@@ -270,6 +268,13 @@ function startNewRound(roomCode) {
                     allPlayerRoles
                 });
             } else {
+                 let locationsForPlayer = allThemeLocationNames;
+                 if (player.role === 'สายลับ') {
+                    let shuffledLocations = [...allThemeLocationNames];
+                    shuffleArray(shuffledLocations);
+                    locationsForPlayer = shuffledLocations.slice(0, 20); // Spy sees a limited list
+                 }
+
                 socket.emit('gameStarted', {
                     location: player.role === 'สายลับ' ? 'ไม่ทราบ' : game.currentLocation,
                     role: player.role,
@@ -278,7 +283,7 @@ function startNewRound(roomCode) {
                     isHost: player.isHost,
                     players: game.players,
                     isSpectator: false,
-                    allLocations: allThemeLocationNames
+                    allLocations: locationsForPlayer
                 });
             }
         }
@@ -412,5 +417,4 @@ function endGamePhase(roomCode, resultText) {
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => console.log(`Server is running on port ${PORT}`));
-
 

@@ -1,13 +1,17 @@
 {
   "name": "spyfall-online",
   "version": "1.0.0",
-  "description": "",
+  "description": "A multiplayer online version of the Spyfall game.",
   "main": "server.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "start": "node server.js"
   },
-  "keywords": [],
+  "keywords": [
+    "spyfall",
+    "multiplayer",
+    "socket.io"
+  ],
   "author": "",
   "license": "ISC",
   "dependencies": {

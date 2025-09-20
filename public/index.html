@@ -97,7 +97,7 @@
             <div class="flex justify-between items-center mb-2">
                 <h2 id="game-header" class="text-3xl font-bold game-header">Spyfall</h2>
                 <div class="flex items-center space-x-2">
-                     <button id="bounty-hunt-btn" class="hidden w-10 h-10 rounded-full bg-yellow-400 hover:bg-yellow-500 text-black font-bold text-2xl flex items-center justify-center">!</button>
+                     <button id="bounty-hunt-btn" class="hidden btn btn-sm bg-red-500 hover:bg-red-600 text-white">แสดงตัว</button>
                      <div id="timer" class="text-2xl font-mono timer-display px-3 py-1 rounded-md">05:00</div>
                 </div>
             </div>
@@ -150,9 +150,9 @@
         </div>
         <div id="waiting-for-bounty-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4">
             <div class="card text-center w-full max-w-md">
-                <h3 class="text-2xl font-bold mb-4 text-yellow-500">!</h3>
-                <p>สายลับกำลังล่าค่าหัว! <span id="waiting-bounty-spy-name" class="font-bold"></span> กำลังแสดงตัว</p>
-                <p class="text-sm text-gray-600">เกมจะดำเนินต่อในไม่ช้า...</p>
+                <h3 class="text-2xl font-bold mb-4 text-yellow-500">สายลับแสดงตัว!</h3>
+                <p> <span id="waiting-bounty-spy-name" class="font-bold"></span> กำลังทำการล่าค่าหัว</p>
+                <p class="text-sm text-gray-600">เกมจะหยุดชั่วคราว...</p>
             </div>
         </div>
     </div>

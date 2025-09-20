@@ -4,7 +4,7 @@ const screens = { home: $('home-screen'), lobby: $('lobby-screen'), game: $('gam
 const modals = { locations: $('locations-modal'), voting: $('voting-modal'), spyGuess: $('spy-guess-modal'), waitingForSpy: $('waiting-for-spy-modal'), endRound: $('end-round-modal'), rejoinAs: $('rejoin-as-modal') };
 const playerNameInput = $('player-name-input'), nameError = $('name-error'), createRoomBtn = $('create-room-btn'), roomCodeInput = $('room-code-input'), joinRoomBtn = $('join-room-btn');
 const lobbyRoomCode = $('lobby-room-code'), copyCodeBtn = $('copy-code-btn'), playerList = $('player-list'), startGameBtn = $('start-game-btn'), gameSettings = $('game-settings'), timerSelect = $('timer-select'), roundsSelect = $('rounds-select'), themeSelect = $('theme-select'), lobbyMessage = $('lobby-message'), voteTimerSelect = $('vote-timer-select');
-const timerDisplay = $('timer'), locationDisplay = $('location-display'), roleDisplay = $('role-display'), roleDescDisplay = $('role-desc-display'), ingameActions = $('ingame-actions'), showLocationsBtn = $('show-locations-btn'), currentRoundSpan = $('current-round'), totalRoundsSpan = $('total-rounds'), inGameScoreboard = $('in-game-scoreboard'), hostEndRoundBtn = $('host-end-round-btn'), roleLabel = $('role-label'), gameHeader = $('game-header');
+const timerDisplay = $('timer'), locationDisplay = $('location-display'), roleDisplay = $('role-display'), roleDescDisplay = $('role-desc-display'), ingameActions = $('ingame-actions'), showLocationsBtn = $('show-locations-btn'), currentRoundSpan = $('current-round'), totalRoundsSpan = $('total-rounds'), inGameScoreboard = $('in-game-scoreboard'), hostEndRoundBtn = $('host-end-round-btn'), roleLabel = $('role-label'), gameHeader = $('game-header'), gameRoomCode = $('game-room-code');
 const locationsList = $('locations-list'), closeLocationsBtn = $('close-locations-btn'), voteReason = $('vote-reason'), voteTimerDisplay = $('vote-timer'), votePlayerButtons = $('vote-player-buttons'), abstainVoteBtn = $('abstain-vote-btn');
 const spyLocationGuess = $('spy-location-guess'), confirmSpyGuessBtn = $('confirm-spy-guess-btn'), waitingSpyName = $('waiting-spy-name'), spyGuessTaunt = $('spy-guess-taunt'), waitingTaunt = $('waiting-taunt');
 const endModalTitle = $('end-modal-title'), endLocation = $('end-location'), endSpy = $('end-spy'), roundResultText = $('round-result-text'), nextRoundBtn = $('next-round-btn'), backToLobbyBtn = $('back-to-lobby-btn');
@@ -52,9 +52,9 @@ function updateScoreboard(players, container, allPlayerRoles = null) {
         if (allPlayerRoles) {
             const roleSpan = document.createElement('span');
             roleSpan.className = 'text-sm';
-            const playerRole = allPlayerRoles.find(r => r.id === player.id)?.role;
-            if (playerRole) {
-               roleSpan.innerHTML = `- <span class="font-semibold text-indigo-600">${playerRole}</span>`;
+            const playerRoleData = allPlayerRoles.find(r => r.id === player.id);
+            if (playerRoleData) {
+               roleSpan.innerHTML = `- <span class="font-semibold text-indigo-600">${playerRoleData.role}</span>`;
                leftDiv.appendChild(roleSpan);
             }
         }
@@ -195,6 +195,7 @@ socket.on('rejoinSuccess', ({ game, roomCode, self }) => {
     showScreen(game.state === 'lobby' ? 'lobby' : 'game');
     if (game.state !== 'lobby') {
         setGameTheme(self.role);
+        gameRoomCode.textContent = roomCode;
     }
 });
 socket.on('error', m => alert(m));
@@ -283,10 +284,11 @@ socket.on('gameStarted', (data) => {
     
     currentRoundSpan.textContent = data.round;
     totalRoundsSpan.textContent = data.totalRounds;
+    gameRoomCode.textContent = lobbyRoomCode.textContent; // Show room code in game
     hostEndRoundBtn.classList.toggle('hidden', !currentClientIsHost || (self && self.isSpectator));
     setGameTheme(data.role);
 
-    roleDescDisplay.classList.add('hidden'); // Reset description
+    roleDescDisplay.classList.add('hidden');
 
     if (self && self.isSpectator) {
         locationDisplay.textContent = data.location;
@@ -322,8 +324,6 @@ socket.on('timerUpdate', ({ timeLeft, players }) => {
     if (screens.game.offsetParent !== null) {
         const self = players.find(p => p.socketId === socket.id);
         if (self && self.isSpectator) {
-            // Spectator role updates would require sending allPlayerRoles with timerUpdate.
-            // For now, it just updates scores.
         }
         updateScoreboard(players, inGameScoreboard);
     }

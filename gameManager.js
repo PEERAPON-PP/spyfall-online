@@ -31,9 +31,12 @@ function parseRole(roleString) {
     }
     return { name: roleString, description: null };
 }
-function getAvailableLocations(theme) {
-    if (theme === 'all') return allLocations;
-    return allLocations.filter(loc => loc.category === theme);
+function getAvailableLocations(themes) {
+    if (!themes || themes.length === 0 || themes.includes('all')) {
+        // 'all' is a fallback, UI doesn't have it anymore but good to keep
+        return allLocations;
+    }
+    return allLocations.filter(loc => themes.includes(loc.category));
 }
 
 // --- Exported Functions ---
@@ -58,8 +61,8 @@ function startGame(roomCode, settings, games, io) {
     if (!game) return;
     if (game.players.filter(p => !p.disconnected && !p.isSpectator).length < 1) return;
     
-    const { time, rounds, theme, voteTime } = settings;
-    game.settings = { time: parseInt(time), rounds: parseInt(rounds), theme, voteTime: parseInt(voteTime) || 120 };
+    const { time, rounds, themes, voteTime } = settings;
+    game.settings = { time: parseInt(time), rounds: parseInt(rounds), themes: themes || ['default'], voteTime: parseInt(voteTime) || 120 };
     startNewRound(roomCode, games, io);
 }
 
@@ -90,7 +93,7 @@ function startNewRound(roomCode, games, io) {
         }
     });
 
-    const availableLocations = getAvailableLocations(game.settings.theme);
+    const availableLocations = getAvailableLocations(game.settings.themes);
     if (!availableLocations || availableLocations.length === 0) {
         io.to(roomCode).emit('error', 'ไม่พบสถานที่สำหรับโหมดที่เลือก');
         return;
@@ -274,7 +277,7 @@ function spyEscapes(roomCode, reason, games, io) {
     game.spy.score++;
     game.state = 'spy-guessing';
     const taunt = TAUNTS[Math.floor(Math.random() * TAUNTS.length)];
-    const allLocNames = getAvailableLocations(game.settings.theme).map(l => l.name);
+    const allLocNames = getAvailableLocations(game.settings.themes).map(l => l.name);
     shuffleArray(allLocNames);
     const spyLocations = allLocNames.slice(0, 20); 
     const spySocket = io.sockets.sockets.get(game.spy.socketId);
@@ -338,3 +341,4 @@ module.exports = {
     spyGuessLocation,
     clearTimers
 };
+

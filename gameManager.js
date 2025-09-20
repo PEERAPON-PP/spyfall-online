@@ -270,7 +270,13 @@ function endGamePhase(roomCode, resultText, games, io) {
     if (!game) return;
     clearTimers(game);
     game.state = 'post-round';
-    io.to(roomCode).emit('roundOver', { location: game.currentLocation, spyName: game.spy ? parseRole(game.spy.role).name : 'ไม่มี', resultText, isFinalRound: game.currentRound >= game.settings.rounds, players: game.players });
+    io.to(roomCode).emit('roundOver', { 
+        location: game.currentLocation, 
+        spyName: game.spy ? game.spy.name : 'ไม่มี', // CORRECTED THIS LINE
+        resultText, 
+        isFinalRound: game.currentRound >= game.settings.rounds, 
+        players: game.players 
+    });
 }
 
 function submitVote(roomCode, socketId, votedPlayerId, games, io) {
@@ -290,7 +296,7 @@ function submitVote(roomCode, socketId, votedPlayerId, games, io) {
 
 function spyGuessLocation(roomCode, socketId, guessedLocation, games, io) {
     const game = games[roomCode];
-    if (!game || game.state !== 'spy-guessing' || socketId !== game.spy.socketId) return;
+    if (!game || game.state !== 'spy-guessing' || !game.spy || socketId !== game.spy.socketId) return;
 
     let resultText;
     if (guessedLocation === game.currentLocation) {
@@ -306,13 +312,11 @@ function initiateBountyHunt(roomCode, games, io) {
     const game = games[roomCode];
     if (!game || !game.spy || !game.bountyTarget || game.state !== 'playing') return;
 
-    clearTimers(game); // Stop the main game timer
+    clearTimers(game);
     game.state = 'bounty-hunting';
 
     const spySocket = io.sockets.sockets.get(game.spy.socketId);
-    const otherPlayers = game.players.filter(p => p.id !== game.spy.id);
     
-    // Send options to spy
     if (spySocket) {
         const locationOptions = getAvailableLocations(game.settings.themes).map(l => l.name);
         const roleOptions = game.currentRoles.map(r => parseRole(r).name).filter(r => r !== 'สายลับ');
@@ -325,23 +329,23 @@ function initiateBountyHunt(roomCode, games, io) {
         });
     }
 
-    // Inform other players
-    otherPlayers.forEach(p => {
-        const playerSocket = io.sockets.sockets.get(p.socketId);
-        if (playerSocket) playerSocket.emit('waitingForBountyHunt', { spyName: game.spy.name });
+    game.players.forEach(p => {
+        if (p.id !== game.spy.id) {
+             const playerSocket = io.sockets.sockets.get(p.socketId);
+             if (playerSocket) playerSocket.emit('waitingForBountyHunt', { spyName: game.spy.name });
+        }
     });
 
-    // Start a timer for the bounty hunt
     game.specialTimer = setTimeout(() => {
         if (games[roomCode] && games[roomCode].state === 'bounty-hunting') {
-            resolveBountyHunt(roomCode, { location: null, role: null }, games, io); // Timeout = wrong guess
+            resolveBountyHunt(roomCode, { location: null, role: null }, games, io);
         }
     }, 45 * 1000);
 }
 
 function resolveBountyHunt(roomCode, guess, games, io) {
     const game = games[roomCode];
-    if (!game || game.state !== 'bounty-hunting') return;
+    if (!game || game.state !== 'bounty-hunting' || !game.spy || !game.bountyTarget) return;
 
     clearTimers(game);
 

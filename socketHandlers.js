@@ -4,7 +4,7 @@ const gameManager = require('./gameManager');
 const games = {};
 const playerSessions = {}; // Maps playerToken to { roomCode, playerId }
 
-// ฟังก์ชันที่เพิ่มเข้ามาเพื่อแก้ปัญหา
+// Function to fix the crash
 function parseRole(roleString) {
     if (!roleString) return { name: '', description: null };
     const match = roleString.match(/^(.*?)\s*\((.*?)\)$/);
@@ -25,7 +25,13 @@ function initializeSocketHandlers(io) {
         socket.on('createRoom', ({ playerName, playerToken }) => {
             const roomCode = gameManager.generateRoomCode(games);
             socket.roomCode = roomCode;
-            games[roomCode] = { players: [], state: 'lobby', settings: { time: 300, rounds: 5, themes: ['default'], voteTime: 120, bountyHuntEnabled: false }, currentRound: 0, usedLocations: [] };
+            games[roomCode] = { 
+                players: [], 
+                state: 'lobby', 
+                settings: { time: 300, rounds: 5, themes: ['default'], voteTime: 120, bountyHuntEnabled: false }, 
+                currentRound: 0, 
+                locationDeck: [] // Using locationDeck instead of usedLocations
+            };
             const player = { id: uuidv4(), socketId: socket.id, name: playerName, isHost: true, score: 0, token: playerToken, isSpectator: false, disconnected: false };
             games[roomCode].players.push(player);
             playerSessions[playerToken] = { roomCode, playerId: player.id };
@@ -39,7 +45,6 @@ function initializeSocketHandlers(io) {
             const game = games[roomCodeUpper];
             if (!game) return socket.emit('error', 'ไม่พบห้องนี้');
 
-            // --- SIMPLIFIED JOIN LOGIC ---
             if (game.state !== 'lobby') {
                 socket.roomCode = roomCodeUpper;
                 const player = { id: uuidv4(), socketId: socket.id, name: playerName, isHost: false, score: 0, token: playerToken, isSpectator: 'waiting', disconnected: false };
@@ -47,14 +52,12 @@ function initializeSocketHandlers(io) {
                 playerSessions[playerToken] = { roomCode: roomCodeUpper, playerId: player.id };
                 socket.join(roomCodeUpper);
                 
-                // Immediately send them the current game state so they can spectate
                 gameManager.sendGameStateToSpectator(game, player, io);
 
                 io.to(roomCodeUpper).emit('updatePlayerList', {players: game.players, settings: game.settings});
                 return;
             }
 
-            // Normal lobby join logic
             socket.roomCode = roomCodeUpper;
             const player = { id: uuidv4(), socketId: socket.id, name: playerName, isHost: false, score: 0, token: playerToken, isSpectator: false, disconnected: false };
             game.players.push(player);
@@ -131,7 +134,7 @@ function initializeSocketHandlers(io) {
             if (game && player && player.isHost) {
                 game.state = 'lobby';
                 game.currentRound = 0;
-                game.usedLocations = [];
+                game.locationDeck = []; // Reset the deck
                 game.players.forEach(p => p.score = 0);
                 gameManager.clearTimers(game);
                 io.to(socket.roomCode).emit('returnToLobby');
@@ -202,3 +205,4 @@ function initializeSocketHandlers(io) {
 }
 
 module.exports = initializeSocketHandlers;
+

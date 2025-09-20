@@ -128,17 +128,21 @@
             container.innerHTML = '';
             const sortedPlayers = [...players].sort((a, b) => b.score - a.score);
 
-            // Find the current client's player data and host status *within this function's scope*.
-            // This is more robust than relying on a global variable that might be stale.
-            const self = players.find(p => p.token === playerToken);
+            const self = players.find(p => p.socketId === socket.id);
             const currentClientIsHost = self ? self.isHost : false;
 
             sortedPlayers.forEach(player => {
                 const playerDiv = document.createElement('div');
                 playerDiv.className = 'flex justify-between items-center bg-gray-100 p-2 rounded';
+                
                 if (player.disconnected) playerDiv.classList.add('player-disconnected');
 
-                // --- Left Side (Name, Status, Role) ---
+                // Highlight the current player's own row
+                if (self && player.id === self.id) {
+                    playerDiv.classList.remove('bg-gray-100');
+                    playerDiv.classList.add('bg-indigo-100', 'border', 'border-indigo-300');
+                }
+
                 const leftDiv = document.createElement('div');
                 leftDiv.className = 'flex-grow flex items-center space-x-2';
 
@@ -147,8 +151,8 @@
                 let statusText = '';
                 if (player.isSpectator) {
                     statusText = ' (ผู้ชม)';
-                } else if (allPlayerRoles === null && screens.lobby.offsetParent !== null) {
-                    if(self && self.isSpectator && player.id === self.id) statusText = ' (รอเล่นรอบถัดไป)';
+                } else if (container === playerList && self && self.isSpectator && player.id === self.id) {
+                    statusText = ' (รอเล่นรอบถัดไป)';
                 }
                 nameSpan.innerHTML = `${crown}${player.name}<span class="text-gray-500">${statusText}</span>`;
                 leftDiv.appendChild(nameSpan);
@@ -160,7 +164,6 @@
                     leftDiv.appendChild(roleSpan);
                 }
 
-                // --- Right Side (Score, Buttons) ---
                 const rightDiv = document.createElement('div');
                 rightDiv.className = 'flex items-center space-x-2';
 
@@ -169,9 +172,7 @@
                 scoreSpan.textContent = `${player.score} คะแนน`;
                 rightDiv.appendChild(scoreSpan);
                 
-                // Lobby specific buttons
                 if (container === playerList) {
-                    // Toggle Spectator Button
                     if (self && player.id === self.id && !player.isHost) {
                         const toggleBtn = document.createElement('button');
                         toggleBtn.textContent = player.isSpectator ? 'สลับเป็นผู้เล่น' : 'สลับเป็นผู้ชม';
@@ -179,7 +180,6 @@
                         toggleBtn.onclick = () => socket.emit('toggleSpectatorMode');
                         rightDiv.appendChild(toggleBtn);
                     }
-                    // Kick Button - USE THE LOCALLY DETERMINED HOST STATUS
                     if (currentClientIsHost && self && player.id !== self.id) {
                          const kickButton = document.createElement('button');
                          kickButton.textContent = 'เตะ';
@@ -255,31 +255,21 @@
         
         socket.on('rejoinSuccess', ({ game, roomCode, self }) => {
             socket.playerData = self;
-            isHost = self.isHost;
             lobbyRoomCode.textContent = roomCode;
             localStorage.setItem('lastRoomCode', roomCode);
-
             showScreen(game.state === 'lobby' ? 'lobby' : 'game');
-            if (game.state !== 'lobby') {
-                // This logic implies rejoining a game in progress, spectator status is handled by gameStarted event
-            }
         });
         socket.on('error', m => alert(m));
 
         socket.on('updatePlayerList', players => {
-            // Persist self data and global isHost for other functions that rely on it
-            const self = players.find(p => p.token === playerToken);
-            if (self) {
-                socket.playerData = self;
-                isHost = self.isHost;
-            }
-
-            // Always use the fresh 'self' object for rendering this specific screen's controls
+            const self = players.find(p => p.socketId === socket.id);
             const currentClientIsHost = self ? self.isHost : false;
             
-            updateScoreboard(players, playerList); // The scoreboard now internally checks host status correctly
+            isHost = currentClientIsHost;
+            if (self) socket.playerData = self;
+
+            updateScoreboard(players, playerList);
             
-            // Show settings for everyone, but disable for non-hosts
             gameSettings.classList.remove('hidden');
             const settingInputs = gameSettings.querySelectorAll('select');
             settingInputs.forEach(input => input.disabled = !currentClientIsHost);
@@ -306,7 +296,7 @@
                 disconnectedPlayers.forEach(player => {
                     const button = document.createElement('button');
                     button.textContent = `เข้าร่วมในชื่อ: ${player.name}`;
-                    button.className = 'btn btn-primary w-full';
+                    button.className = 'btn btn-primary w-full mb-2';
                     button.onclick = () => {
                         if (!playerToken) {
                              playerToken = generateToken();
@@ -327,20 +317,21 @@
             showScreen('lobby');
             lobbyRoomCode.textContent = roomCode;
             localStorage.setItem('lastRoomCode', roomCode);
-            lobbyMessage.textContent = 'คุณได้เข้าร่วมในฐานะผู้ชม รอเล่นรอบถัดไป';
-            gameSettings.classList.add('hidden');
-            startGameBtn.classList.add('hidden');
         });
 
         socket.on('gameStarted', (data) => {
             showScreen('game');
             showModal(null);
-            isHost = data.isHost;
+            
+            const self = data.players.find(p => p.socketId === socket.id);
+            const currentClientIsHost = self ? self.isHost : false;
+            isHost = currentClientIsHost;
+            
             currentRoundSpan.textContent = data.round;
             totalRoundsSpan.textContent = data.totalRounds;
-            hostEndRoundBtn.classList.toggle('hidden', !isHost || data.isSpectator);
+            hostEndRoundBtn.classList.toggle('hidden', !currentClientIsHost || (self && self.isSpectator));
 
-            if (data.isSpectator) {
+            if (self && self.isSpectator) {
                 locationDisplay.textContent = data.location;
                 roleLabel.textContent = "สถานะ:"
                 roleDisplay.textContent = "คุณเป็นผู้ชม";
@@ -368,15 +359,9 @@
         socket.on('timerUpdate', ({ timeLeft, players }) => {
             timerDisplay.textContent = `${String(Math.floor(timeLeft/60)).padStart(2,'0')}:${String(timeLeft%60).padStart(2,'0')}`;
             if (screens.game.offsetParent !== null) {
-                // Spectators might need updated roles if someone disconnects/reconnects, but for now just update scores.
-                // A more advanced version might resend the roles if the player list changes.
-                const self = players.find(p => p.token === playerToken);
-                if (self && self.isSpectator) {
-                    // Spectators see roles, but roles don't change mid-round, so no need to pass allPlayerRoles again.
-                    // A better approach would be to get allPlayerRoles from a game state object if it was stored on client.
-                } else {
-                    updateScoreboard(players, inGameScoreboard);
-                }
+                // To show roles for spectators during the game, we would need allPlayerRoles here.
+                // For simplicity, we are not updating roles mid-game for now.
+                updateScoreboard(players, inGameScoreboard);
             }
         });
 
@@ -424,16 +409,20 @@
         socket.on('roundOver', ({ location, spyName, resultText, isFinalRound, players }) => {
             showModal('endRound'); endLocation.textContent = location; endSpy.textContent = spyName;
             let resultMessage = resultText;
+
+            const self = players.find(p => p.socketId === socket.id);
+            const currentClientIsHost = self ? self.isHost : false;
+            
             if (isFinalRound) {
                 endModalTitle.textContent = "จบเกม!";
                 const winner = [...players].sort((a,b) => b.score - a.score)[0];
                 resultMessage += `\n\n🏆 ผู้ชนะคือ ${winner.name} ด้วยคะแนน ${winner.score} คะแนน!`;
                 nextRoundBtn.classList.add('hidden');
-                if (isHost) backToLobbyBtn.classList.remove('hidden'); else backToLobbyBtn.classList.add('hidden');
+                backToLobbyBtn.classList.toggle('hidden', !currentClientIsHost);
                 localStorage.removeItem('lastRoomCode');
             } else {
                 endModalTitle.textContent = "จบรอบ";
-                nextRoundBtn.classList.toggle('hidden', !isHost || (socket.playerData && socket.playerData.isSpectator));
+                nextRoundBtn.classList.toggle('hidden', !currentClientIsHost || (self && self.isSpectator));
                 backToLobbyBtn.classList.add('hidden');
             }
             roundResultText.textContent = resultMessage;

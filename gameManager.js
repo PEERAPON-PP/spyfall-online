@@ -270,7 +270,7 @@ function initiateSpyEscape(roomCode, reason, games, io) {
     // --- END: FIX SPY GUESS LIST ---
     
     const spySocket = io.sockets.sockets.get(game.spy.socketId);
-    if(spySocket) spySocket.emit('spyGuessPhase', { locations: spyLocations, taunt: `${reason} ${taunt}`, duration: 30 });
+    if(spySocket) spySocket.emit('spyGuessPhase', { locations: spyLocations, taunt: `${reason} ${taunt}`, duration: 60 });
 
     game.players.forEach(p => {
         if (p.id !== game.spy.id) {
@@ -283,7 +283,7 @@ function initiateSpyEscape(roomCode, reason, games, io) {
         if(games[roomCode] && games[roomCode].state === 'spy-guessing'){
             spyGuessLocation(roomCode, game.spy.socketId, null, games, io);
         }
-    }, 30 * 1000);
+    }, 60 * 1000);
 }
 
 function endGamePhase(roomCode, resultText, games, io) {
@@ -351,7 +351,7 @@ function initiateBountyHunt(roomCode, games, io) {
         spySocket.emit('bountyHuntPhase', {
             locations: spyLocations,
             targetName: game.bountyTarget.name,
-            duration: 45
+            duration: 60
         });
     }
 
@@ -366,7 +366,7 @@ function initiateBountyHunt(roomCode, games, io) {
         if (games[roomCode] && games[roomCode].state === 'bounty-hunting') {
             resolveBountyHunt(roomCode, { location: null, role: null }, games, io);
         }
-    }, 45 * 1000);
+    }, 60 * 1000);
 }
 
 function resolveBountyHunt(roomCode, guess, games, io) {

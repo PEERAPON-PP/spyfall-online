@@ -57,7 +57,7 @@ function initializeSocketHandlers(io) {
                 const oldName = playerToTakeOver.name;
 
                 socket.roomCode = roomCode;
-                playerToTakeOver.socketId = socket.id;
+                playerToTakeOver.socketId = socket.id; // CRITICAL: Update the socket ID
                 playerToTakeOver.disconnected = false;
                 playerToTakeOver.token = playerToken;
                 playerToTakeOver.name = newPlayerName;
@@ -172,41 +172,51 @@ function initializeSocketHandlers(io) {
         });
 
         socket.on('disconnect', () => {
-            const roomCode = socket.roomCode;
-            if (!roomCode || !games[roomCode]) {
-                // This socket wasn't in a room, or the room is gone. Do nothing.
-                return;
-            }
-            
-            const game = games[roomCode];
-            // Find the player associated with the *specific socket ID that is disconnecting*.
-            const player = game.players.find(p => p.socketId === socket.id);
+            let playerFound = null;
+            let roomCodeFound = null;
 
-            // If a player is found, it means this is a disconnect for their *current* session.
-            // If no player is found, it's a "ghost" disconnect from an old session, and we should ignore it.
-            if (player) {
-                player.disconnected = true;
-                io.to(roomCode).emit('playerDisconnected', player.name);
-                io.to(roomCode).emit('updatePlayerList', {players: game.players, settings: game.settings});
+            // Find which player this disconnecting socket belonged to
+            for (const rc in games) {
+                const p = games[rc].players.find(player => player.socketId === socket.id);
+                if (p) {
+                    playerFound = p;
+                    roomCodeFound = rc;
+                    break;
+                }
+            }
+
+            // If we found a player associated with this specific socket connection
+            if (playerFound && roomCodeFound) {
+                const game = games[roomCodeFound];
                 
-                if (player.isHost) {
+                // This is the correct way to handle disconnect.
+                // We only mark them as disconnected. We don't remove them.
+                // The 'rejoinAsPlayer' will handle reconnecting.
+                playerFound.disconnected = true;
+                
+                io.to(roomCodeFound).emit('playerDisconnected', playerFound.name);
+                io.to(roomCodeFound).emit('updatePlayerList', { players: game.players, settings: game.settings });
+
+                if (playerFound.isHost) {
                     const newHost = game.players.find(p => !p.disconnected);
                     if (newHost) {
                         newHost.isHost = true;
-                        io.to(roomCode).emit('newHost', newHost.name);
-                        io.to(roomCode).emit('updatePlayerList', {players: game.players, settings: game.settings});
+                        io.to(roomCodeFound).emit('newHost', newHost.name);
+                        io.to(roomCodeFound).emit('updatePlayerList', { players: game.players, settings: game.settings });
                     }
                 }
 
                 if (game.players.every(p => p.disconnected)) {
                     setTimeout(() => {
-                        if (games[roomCode] && games[roomCode].players.every(p => p.disconnected)) {
-                            gameManager.clearTimers(games[roomCode]);
-                            delete games[roomCode];
+                        if (games[roomCodeFound] && games[roomCodeFound].players.every(p => p.disconnected)) {
+                            gameManager.clearTimers(games[roomCodeFound]);
+                            delete games[roomCodeFound];
                         }
                     }, 600000);
                 }
             }
+            // If no player is found for this socket.id, it's a "ghost" disconnect from a stale session.
+            // This happens during a quick rejoin. We can safely ignore it.
         });
     });
 }

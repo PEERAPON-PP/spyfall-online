@@ -4,7 +4,6 @@ const gameManager = require('./gameManager');
 const games = {};
 const playerSessions = {}; // Maps playerToken to { roomCode, playerId }
 
-// Function to fix the crash
 function parseRole(roleString) {
     if (!roleString) return { name: '', description: null };
     const match = roleString.match(/^(.*?)\s*\((.*?)\)$/);
@@ -13,6 +12,7 @@ function parseRole(roleString) {
 
 function initializeSocketHandlers(io) {
     io.on('connection', (socket) => {
+        let isStartingNextRound = false;
 
         const getCurrentState = () => {
             const roomCode = socket.roomCode;
@@ -25,13 +25,7 @@ function initializeSocketHandlers(io) {
         socket.on('createRoom', ({ playerName, playerToken }) => {
             const roomCode = gameManager.generateRoomCode(games);
             socket.roomCode = roomCode;
-            games[roomCode] = { 
-                players: [], 
-                state: 'lobby', 
-                settings: { time: 300, rounds: 5, themes: ['default'], voteTime: 120, bountyHuntEnabled: false }, 
-                currentRound: 0, 
-                locationDeck: [] // Using locationDeck instead of usedLocations
-            };
+            games[roomCode] = { players: [], state: 'lobby', settings: { time: 300, rounds: 5, themes: ['default'], voteTime: 120, bountyHuntEnabled: false }, currentRound: 0, locationDeck: [] };
             const player = { id: uuidv4(), socketId: socket.id, name: playerName, isHost: true, score: 0, token: playerToken, isSpectator: false, disconnected: false };
             games[roomCode].players.push(player);
             playerSessions[playerToken] = { roomCode, playerId: player.id };
@@ -45,6 +39,53 @@ function initializeSocketHandlers(io) {
             const game = games[roomCodeUpper];
             if (!game) return socket.emit('error', 'ไม่พบห้องนี้');
 
+            // --- RECONNECT LOGIC ---
+            const session = playerSessions[playerToken];
+            if (session && session.roomCode === roomCodeUpper) {
+                const existingPlayer = game.players.find(p => p.id === session.playerId);
+                if (existingPlayer) {
+                    console.log(`Player ${existingPlayer.name} is reconnecting.`);
+                    existingPlayer.socketId = socket.id;
+                    existingPlayer.disconnected = false;
+                    socket.roomCode = roomCodeUpper;
+                    socket.join(roomCodeUpper);
+
+                    // Send the correct state back to the reconnected player
+                    if (game.state === 'lobby') {
+                         socket.emit('joinSuccess', { roomCode: roomCodeUpper });
+                    } else {
+                        // Resend game state
+                        if(existingPlayer.isSpectator){
+                            gameManager.sendGameStateToSpectator(game, existingPlayer, io);
+                        } else {
+                            const payload = {
+                                round: game.currentRound,
+                                totalRounds: game.settings.rounds,
+                                isHost: existingPlayer.isHost,
+                                players: game.players,
+                                isSpectator: existingPlayer.isSpectator,
+                                allLocationsData: gameManager.getAvailableLocations(game.settings.themes),
+                                allPlayerRoles: game.players.filter(p => !p.disconnected && !p.isSpectator).map(p => ({ id: p.id, role: parseRole(p.role).name })),
+                                allLocations: game.spyLocationList
+                            };
+                             const { name: roleName, description: roleDesc } = parseRole(existingPlayer.role);
+                             const isSpy = roleName === 'สายลับ';
+                             payload.role = roleName;
+                             payload.roleDesc = roleDesc;
+                             payload.location = isSpy ? 'ไม่ทราบ' : game.currentLocation;
+                             if (isSpy && game.bountyTarget) {
+                                 payload.bountyTargetName = game.bountyTarget.name;
+                             }
+                             socket.emit('gameStarted', payload);
+                        }
+                    }
+                    io.to(roomCodeUpper).emit('updatePlayerList', {players: game.players, settings: game.settings});
+                    io.to(roomCodeUpper).emit('playerReconnected', existingPlayer.name);
+                    return; // Stop execution to prevent creating a new player
+                }
+            }
+
+            // --- NORMAL JOIN LOGIC (New Player or Spectator) ---
             if (game.state !== 'lobby') {
                 socket.roomCode = roomCodeUpper;
                 const player = { id: uuidv4(), socketId: socket.id, name: playerName, isHost: false, score: 0, token: playerToken, isSpectator: 'waiting', disconnected: false };
@@ -122,20 +163,22 @@ function initializeSocketHandlers(io) {
             }
         });
 
-        socket.on('requestNextRound', () => {
-            const { game, player } = getCurrentState();
-            if (game && player && player.isHost && game.currentRound < game.settings.rounds) {
-                // Prevent race condition from double-clicking "Next Round" button
-                if (game.isStartingNextRound) return;
-                game.isStartingNextRound = true;
+        socket.on('requestNextRound', async () => {
+            if (isStartingNextRound) return;
 
-                gameManager.startNewRound(socket.roomCode, games, io)
-                    .finally(() => {
-                        // Ensure the flag is always reset, even if an error occurs
-                        if (games[socket.roomCode]) {
-                           games[socket.roomCode].isStartingNextRound = false;
-                        }
-                    });
+            const { game, player } = getCurrentState();
+            if (game && player && player.isHost) {
+                if (game.currentRound < game.settings.rounds) {
+                    isStartingNextRound = true;
+                    try {
+                        await gameManager.startNewRound(socket.roomCode, games, io);
+                    } catch (error) {
+                        console.error("Error starting next round:", error);
+                        // Handle error, maybe emit an error message to the client
+                    } finally {
+                        isStartingNextRound = false;
+                    }
+                }
             }
         });
 
@@ -144,7 +187,7 @@ function initializeSocketHandlers(io) {
             if (game && player && player.isHost) {
                 game.state = 'lobby';
                 game.currentRound = 0;
-                game.locationDeck = []; // Reset the deck
+                game.locationDeck = [];
                 game.players.forEach(p => p.score = 0);
                 gameManager.clearTimers(game);
                 io.to(socket.roomCode).emit('returnToLobby');
@@ -186,30 +229,39 @@ function initializeSocketHandlers(io) {
 
                 if (playerFound && roomCodeFound) {
                     const game = games[roomCodeFound];
+                    // Don't remove the player, just mark them as disconnected
                     playerFound.disconnected = true;
                     
                     io.to(roomCodeFound).emit('playerDisconnected', playerFound.name);
                     io.to(roomCodeFound).emit('updatePlayerList', { players: game.players, settings: game.settings });
 
                     if (playerFound.isHost) {
-                        const newHost = game.players.find(p => !p.disconnected);
+                        // Find a new host among connected players
+                        const newHost = game.players.find(p => !p.disconnected && !p.isSpectator);
                         if (newHost) {
                             newHost.isHost = true;
+                            playerFound.isHost = false; // Old host is no longer host
                             io.to(roomCodeFound).emit('newHost', newHost.name);
                             io.to(roomCodeFound).emit('updatePlayerList', { players: game.players, settings: game.settings });
                         }
                     }
 
+                    // Check if the room should be cleaned up
                     if (game.players.every(p => p.disconnected)) {
                         setTimeout(() => {
                             if (games[roomCodeFound] && games[roomCodeFound].players.every(p => p.disconnected)) {
+                                console.log(`Deleting empty room ${roomCodeFound}`);
                                 gameManager.clearTimers(games[roomCodeFound]);
+                                // Clean up player sessions for this room
+                                games[roomCodeFound].players.forEach(p => {
+                                    delete playerSessions[p.token];
+                                });
                                 delete games[roomCodeFound];
                             }
-                        }, 600000);
+                        }, 600000); // 10 minutes
                     }
                 }
-            }, 1500);
+            }, 1500); // Wait 1.5 seconds to allow for quick reconnects
         });
     });
 }

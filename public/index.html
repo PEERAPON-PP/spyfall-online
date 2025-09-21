@@ -28,7 +28,7 @@
               </div>
               <div class="card">
                 <h2 class="text-xl font-semibold text-gray-700 mb-3">เข้าร่วมโดยใช้โค้ด</h2>
-                <input type="text" id="room-code-input" placeholder="ใส่รหัสห้อง... (ลอง 'BOT1')" class="input-field mb-3 uppercase" maxlength="4">
+                <input type="text" id="room-code-input" placeholder="ใส่รหัสห้อง..." class="input-field mb-3 uppercase" maxlength="4">
                 <button id="join-room-btn" class="btn btn-secondary w-full">เข้าร่วมห้อง</button>
               </div>
             </div>
@@ -45,32 +45,25 @@
                     <div>
                         <label for="timer-select" class="block text-sm font-medium">เวลาเล่นต่อรอบ:</label>
                         <select id="timer-select" data-setting="time" class="input-field w-full">
-                            <option value="10">10 วินาที</option>
                             <option value="180">3 นาที</option>
                             <option value="300" selected>5 นาที</option>
                             <option value="480">8 นาที</option>
-                            <option value="600">10 นาที</option>
-                            <option value="720">12 นาที</option>
                         </select>
                     </div>
                     <div>
                         <label for="rounds-select" class="block text-sm font-medium">รอบ:</label>
                         <select id="rounds-select" data-setting="rounds" class="input-field w-full">
                             <option value="1">1</option>
-                            <option value="2">2</option>
                             <option value="3">3</option>
                             <option value="5" selected>5</option>
-                            <option value="7">7</option>
                         </select>
                     </div>
                  </div>
                  <div class="mb-4">
                     <label for="vote-timer-select" class="block text-sm font-medium">เวลาโหวตต่อรอบ:</label>
                     <select id="vote-timer-select" data-setting="voteTime" class="input-field w-full">
-                        <option value="10">10 วินาที</option>
                         <option value="30" selected>30 วินาที</option>
                         <option value="60">1 นาที</option>
-                        <option value="90">1 นาที 30 วินาที</option>
                         <option value="120">2 นาที</option>
                     </select>
                 </div>
@@ -95,7 +88,7 @@
         <!-- Game Screen -->
         <div id="game-screen" class="hidden card">
             <div class="flex justify-between items-center mb-2">
-                <h2 id="game-header" class="text-3xl font-bold game-header">Spyfall</h2>
+                <h2 class="text-3xl font-bold game-header">Spyfall</h2>
                 <div class="flex items-center space-x-2">
                      <div id="timer" class="text-2xl font-mono timer-display px-3 py-1 rounded-md">05:00</div>
                 </div>
@@ -104,10 +97,7 @@
                 <span>รอบที่ <span id="current-round">1</span> / <span id="total-rounds">5</span></span>
                 <span>รหัสห้อง: <strong id="game-room-code" class="font-mono"></strong></span>
             </div>
-            <div id="game-content" class="text-center p-6 bg-gray-50 rounded-lg my-4 min-h-[150px] flex flex-col justify-center items-center">
-                <div id="spy-target-display" class="hidden mb-4 p-2 bg-red-100 border border-red-300 rounded-md w-full">
-                    <p class="text-sm text-red-800">เป้าหมายของคุณคือ: <strong id="spy-target-name" class="font-bold"></strong></p>
-                </div>
+            <div class="text-center p-6 bg-gray-50 rounded-lg my-4 min-h-[150px] flex flex-col justify-center items-center">
                 <p class="text-lg mb-2">สถานที่:</p>
                 <h3 id="location-display" class="text-2xl font-bold">???</h3>
                 <p id="role-label" class="text-sm mt-4 text-gray-500">บทบาท:</p>
@@ -134,12 +124,10 @@
         <div id="waiting-for-spy-modal" class="modal-overlay hidden"><div class="card modal-card text-center modal-player"><h3 class="text-2xl font-bold mb-4 text-red-600">สายลับหนีรอด!</h3><p id="waiting-taunt" class="mb-2"></p><p>กำลังรอ <span id="waiting-spy-name" class="font-bold"></span> ทายสถานที่...</p></div></div>
         <div id="end-round-modal" class="modal-overlay hidden"><div class="card modal-card text-center"><h3 id="end-modal-title" class="text-2xl font-bold mb-4">จบรอบ</h3><p class="text-lg mb-2">สถานที่คือ:</p><p id="end-location" class="text-xl font-semibold text-indigo-600 mb-4"></p><p class="text-lg mb-2">สายลับคือ:</p><p id="end-spy" class="text-xl font-semibold text-red-500 mb-4"></p><p id="round-result-text" class="text-gray-700 my-4 whitespace-pre-wrap"></p><button id="next-round-btn" class="btn btn-primary w-full hidden">รอบต่อไป</button><button id="back-to-lobby-btn" class="btn btn-secondary w-full hidden">กลับไปที่ล็อบบี้</button></div></div>
         
-        <!-- Bounty Hunt Modals -->
         <div id="bounty-hunt-modal" class="modal-overlay hidden"><div class="card modal-card text-center modal-spy"><h3 class="text-2xl font-bold mb-2 text-red-600">ล่าค่าหัว!</h3><p class="mb-4">คุณมีเวลา <span id="bounty-hunt-timer" class="font-bold">60</span> วินาทีในการทาย</p><div class="space-y-4"><div><label for="bounty-location-guess" class="block text-sm font-medium text-left">1. ทายสถานที่:</label><select id="bounty-location-guess" class="input-field"></select></div><div><label for="bounty-role-guess" class="block text-sm font-medium text-left">2. ทายบทบาทของ <span id="bounty-target-name" class="font-bold"></span>:</label><select id="bounty-role-guess" class="input-field"></select></div></div><button id="confirm-bounty-guess-btn" class="btn btn-primary w-full mt-6">ยืนยันคำตอบ</button></div></div>
         <div id="waiting-for-bounty-modal" class="modal-overlay hidden"><div class="card modal-card text-center modal-player"><h3 class="text-2xl font-bold mb-4 text-yellow-500">สายลับแสดงตัว!</h3><p> <span id="waiting-bounty-spy-name" class="font-bold"></span> กำลังทำการล่าค่าหัว</p><p class="text-sm text-gray-600">เกมจะหยุดชั่วคราว...</p></div></div>
     </div>
 
-    <!-- External Scripts -->
     <script src="/socket.io/socket.io.js"></script>
     <script src="client.js"></script>
 </body>

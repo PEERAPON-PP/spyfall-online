@@ -1,6 +1,6 @@
 const { v4: uuidv4 } = require('uuid');
 const gameManager = require('./gameManager');
-const botManager = require('./botManager'); // เพิ่มการ import
+const botManager = require('./botManager');
 
 const games = {};
 const playerSessions = {};
@@ -38,7 +38,6 @@ function initializeSocketHandlers(io) {
         socket.on('joinRoom', ({ playerName, roomCode, playerToken }) => {
             const roomCodeUpper = roomCode.toUpperCase();
 
-            // --- BOT GAME LOGIC ---
             if (roomCodeUpper === 'BOT1') {
                 socket.playerName = playerName;
                 socket.playerToken = playerToken;
@@ -53,6 +52,13 @@ function initializeSocketHandlers(io) {
             if (session && session.roomCode === roomCodeUpper) {
                 const existingPlayer = game.players.find(p => p.id === session.playerId);
                 if (existingPlayer) {
+                    // --- DUPLICATE TAB FIX ---
+                    if (existingPlayer.disconnected === false) {
+                        socket.emit('error', 'คุณได้เชื่อมต่ออยู่ในแท็บอื่นแล้ว');
+                        return;
+                    }
+
+                    // This is a valid reconnect
                     existingPlayer.socketId = socket.id;
                     existingPlayer.disconnected = false;
                     socket.roomCode = roomCodeUpper;

@@ -45,15 +45,19 @@ function initializeSocketHandlers(io) {
             const game = games[roomCodeUpper];
             if (!game) return socket.emit('error', 'ไม่พบห้องนี้');
 
+            // FIX: ตรรกะการเข้าร่วมขณะเกมกำลังเล่น
             if (game.state !== 'lobby') {
                 socket.roomCode = roomCodeUpper;
+                // กำหนดสถานะเป็น 'waiting' เพื่อให้รอบถัดไปดึงเข้าเป็นผู้เล่น
                 const player = { id: uuidv4(), socketId: socket.id, name: playerName, isHost: false, score: 0, token: playerToken, isSpectator: 'waiting', disconnected: false };
                 game.players.push(player);
                 playerSessions[playerToken] = { roomCode: roomCodeUpper, playerId: player.id };
                 socket.join(roomCodeUpper);
                 
+                // ส่งข้อมูลเกมปัจจุบันให้ในฐานะผู้ชมไปก่อน
                 gameManager.sendGameStateToSpectator(game, player, io);
 
+                // อัปเดตรายชื่อผู้เล่นให้ทุกคน
                 io.to(roomCodeUpper).emit('updatePlayerList', {players: game.players, settings: game.settings});
                 return;
             }
@@ -143,6 +147,7 @@ function initializeSocketHandlers(io) {
                 game.usedLocations = [];
                 game.players.forEach(p => {
                     p.score = 0;
+                    // Reset all players to be non-spectators when returning to lobby
                     p.isSpectator = false;
                 });
                 gameManager.clearTimers(game);
@@ -214,4 +219,3 @@ function initializeSocketHandlers(io) {
 }
 
 module.exports = initializeSocketHandlers;
-

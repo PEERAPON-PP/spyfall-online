@@ -4,7 +4,6 @@ const gameManager = require('./gameManager');
 const games = {};
 const playerSessions = {}; // Maps playerToken to { roomCode, playerId }
 
-// Function to fix the crash
 function parseRole(roleString) {
     if (!roleString) return { name: '', description: null };
     const match = roleString.match(/^(.*?)\s*\((.*?)\)$/);
@@ -30,7 +29,8 @@ function initializeSocketHandlers(io) {
                 state: 'lobby', 
                 settings: { time: 300, rounds: 5, themes: ['default'], voteTime: 120, bountyHuntEnabled: false }, 
                 currentRound: 0, 
-                usedLocations: []
+                usedLocations: [],
+                isTransitioning: false // Add lock flag
             };
             const player = { id: uuidv4(), socketId: socket.id, name: playerName, isHost: true, score: 0, token: playerToken, isSpectator: false, disconnected: false };
             games[roomCode].players.push(player);
@@ -129,9 +129,21 @@ function initializeSocketHandlers(io) {
         socket.on('requestNextRound', () => {
             const { game, player } = getCurrentState();
             
-            // BUG FIX: Add a strict state check. Only allow starting a new round if the previous one is fully completed.
-            if (game && player && player.isHost && game.state === 'post-round' && game.currentRound < game.settings.rounds) {
-                gameManager.startNewRound(socket.roomCode, games, io);
+            // BUG FIX: Add a transition lock to prevent spamming and ensure clean state changes.
+            if (game && player && player.isHost && game.state === 'post-round' && !game.isTransitioning && game.currentRound < game.settings.rounds) {
+                
+                game.isTransitioning = true; // Lock the state
+                
+                const countdown = 5;
+                io.to(socket.roomCode).emit('startingNextRoundCountdown', countdown);
+
+                setTimeout(() => {
+                    // Re-check game existence in case everyone disconnected during countdown
+                    if (games[socket.roomCode]) {
+                        gameManager.startNewRound(socket.roomCode, games, io);
+                        games[socket.roomCode].isTransitioning = false; // Unlock the state
+                    }
+                }, countdown * 1000);
             }
         });
 

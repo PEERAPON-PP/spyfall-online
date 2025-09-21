@@ -24,34 +24,20 @@ body { font-family: 'IBM Plex Sans Thai', sans-serif; touch-action: manipulation
 .theme-spy .timer-display { background-color: #fee2e2; }
 .theme-player .timer-display { background-color: #e0e7ff; }
 
-/* --- UI Color Theming for Modals & Text --- */
-
-/* Spy Theme (Red) */
-#spy-guess-modal .card, 
-#bounty-hunt-modal .card {
-    border: 2px solid #ef4444;
-}
-#spy-guess-modal h3, 
-#bounty-hunt-modal h3 {
-    color: #ef4444;
-}
-#end-spy {
-    color: #ef4444;
-    font-weight: 600;
+/* Modal Styles */
+.modal-overlay {
+    position: fixed;
+    inset: 0;
+    background-color: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1rem;
+    z-index: 50;
 }
 
-/* Player Theme (Blue) */
-#voting-modal .card, 
-#waiting-for-spy-modal .card,
-#waiting-for-bounty-modal .card {
-     border: 2px solid #4f46e5;
+.modal-card {
+    width: 100%;
+    max-width: 28rem;
 }
-#voting-modal h3, 
-#waiting-for-spy-modal h3,
-#waiting-for-bounty-modal h3 {
-    color: #4f46e5;
-}
-#end-location {
-    color: #4f46e5;
-    font-weight: 600;
-}
+

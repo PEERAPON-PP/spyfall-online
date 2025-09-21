@@ -41,3 +41,14 @@ body { font-family: 'IBM Plex Sans Thai', sans-serif; touch-action: manipulation
     max-width: 28rem;
 }
 
+.modal-spy {
+    border: 3px solid #ef4444;
+}
+.modal-player {
+    border: 3px solid #4f46e5;
+}
+.spectator-spy-role {
+    color: #ef4444;
+    font-weight: 700;
+}
+

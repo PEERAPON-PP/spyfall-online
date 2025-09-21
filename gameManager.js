@@ -119,7 +119,8 @@ async function startNewRound(roomCode, games, io) {
     const allPlayerRoles = activePlayers.map(p => ({ id: p.id, role: parseRole(p.role).name }));
     const themeCount = game.settings.themes.length;
     let spyListSize = themeCount >= 3 ? 22 : (themeCount === 2 ? 18 : (game.settings.themes.includes('default') ? 14 : 12));
-    const allThemeLocationNames = getAvailableLocations(game.settings.themes).map(l => l.name);
+    const allThemeLocations = getAvailableLocations(game.settings.themes);
+    const allThemeLocationNames = allThemeLocations.map(l => l.name);
     if (spyListSize > allThemeLocationNames.length) spyListSize = allThemeLocationNames.length;
     let spyList = game.settings.useGemini ? await getSpyListFromGemini(game.currentLocation, allThemeLocationNames, spyListSize) : null;
     if (!spyList) { let otherLocations = allThemeLocationNames.filter(name => name !== game.currentLocation); shuffleArray(otherLocations); spyList = otherLocations.slice(0, spyListSize - 1); spyList.push(game.currentLocation); }
@@ -128,7 +129,7 @@ async function startNewRound(roomCode, games, io) {
     game.players.forEach(player => {
         const socket = io.sockets.sockets.get(player.socketId);
         if (socket) {
-            const payload = { round: game.currentRound, totalRounds: game.settings.rounds, players: game.players, isSpectator: player.isSpectator, allPlayerRoles, allLocations: game.spyLocationList, canBountyHunt: game.settings.bountyHuntEnabled };
+            const payload = { round: game.currentRound, totalRounds: game.settings.rounds, players: game.players, isSpectator: player.isSpectator, allPlayerRoles, allLocations: game.spyLocationList, allLocationsData: allThemeLocations, canBountyHunt: game.settings.bountyHuntEnabled };
             if (player.isSpectator) { payload.location = game.currentLocation; payload.role = "ผู้ชม"; }
             else if (player.role) { const { name: roleName, description: roleDesc } = parseRole(player.role); payload.role = roleName; payload.roleDesc = roleDesc; payload.location = roleName === 'สายลับ' ? 'ไม่ทราบ' : game.currentLocation; if(roleName === 'สายลับ' && game.bountyTarget) payload.bountyTargetName = game.bountyTarget.name; }
             else return;
@@ -150,7 +151,6 @@ function submitVote(roomCode, socketId, votedPlayerId, games, io) {
         const voterIds = Object.keys(game.votes);
         io.to(roomCode).emit('voteUpdate', { voters: voterIds, totalVoters: playersWhoCanVote.length });
         if (voterIds.length >= playersWhoCanVote.length) {
-            clearTimeout(game.voteTimer);
             calculateVoteResults(roomCode, games, io);
         }
     }
@@ -171,6 +171,7 @@ function endRound(roomCode, reason, games, io) {
 function calculateVoteResults(roomCode, games, io) {
     const game = games[roomCode];
     if (!game || game.state !== 'voting' || game.resultsCalculated) return;
+    clearTimeout(game.voteTimer);
     game.resultsCalculated = true;
     const spyId = game.spy.id;
     const voteCounts = {};
@@ -209,10 +210,65 @@ function endGamePhase(roomCode, resultText, games, io) {
 function spyGuessLocation(roomCode, socketId, guessedLocation, games, io) {
     const game = games[roomCode];
     if (!game || game.state !== 'spy-guessing' || !game.spy || socketId !== game.spy.socketId) return;
-    clearTimers(game); // Ensure timer stops immediately
+    clearTimers(game);
     let resultText = guessedLocation === game.currentLocation ? (game.spy.score++, `สายลับหนีรอด และตอบสถานที่ถูกต้อง!\nสายลับได้รับเพิ่มอีก 1 คะแนน! (รวมเป็น 2)`) : `สายลับหนีรอด! แต่ตอบสถานที่ผิด\nสายลับได้รับ 1 คะแนน`;
     endGamePhase(roomCode, resultText, games, io);
 }
 
-module.exports = { generateRoomCode, startGame, startNewRound, endRound, submitVote, spyGuessLocation, getAvailableLocations, clearTimers };
+function initiateBountyHunt(roomCode, games, io) {
+    const game = games[roomCode];
+    if (!game || game.state !== 'playing' || !game.spy || !game.bountyTarget) return;
+
+    clearTimers(game);
+    game.state = 'bounty-hunting';
+    const duration = 60;
+
+    const spySocket = io.sockets.sockets.get(game.spy.socketId);
+    if (spySocket) {
+        spySocket.emit('bountyHuntPhase', {
+            targetName: game.bountyTarget.name,
+            duration: duration
+        });
+    }
+
+    game.players.forEach(p => {
+        if (p.id !== game.spy.id) {
+            const socket = io.sockets.sockets.get(p.socketId);
+            if (socket) socket.emit('waitingForBountyHunt', { spyName: game.spy.name });
+        }
+    });
+
+    game.specialTimer = setTimeout(() => {
+        if (games[roomCode]?.state === 'bounty-hunting') {
+            resolveBountyHunt(roomCode, { location: null, role: null }, games, io);
+        }
+    }, duration * 1000);
+}
+
+function resolveBountyHunt(roomCode, guess, games, io) {
+    const game = games[roomCode];
+    if (!game || game.state !== 'bounty-hunting') return;
+
+    clearTimers(game);
+
+    const correctLocation = game.currentLocation;
+    const correctRole = parseRole(game.bountyTarget.role).name;
+    const isLocationCorrect = guess.location === correctLocation;
+    const isRoleCorrect = guess.role === correctRole;
+
+    let resultText;
+    if (isLocationCorrect && isRoleCorrect) {
+        game.spy.score += 4;
+        resultText = `ล่าค่าหัวสำเร็จ!\n${game.spy.name} ทายสถานที่ (${correctLocation}) และบทบาทของ ${game.bountyTarget.name} (${correctRole}) ถูกต้องทั้งหมด!\nสายลับได้รับ 4 คะแนนและชนะรอบนี้!`;
+    } else {
+        game.players.forEach(p => {
+            if (!p.isSpectator && p.id !== game.spy.id) p.score += 2;
+        });
+        resultText = `ล่าค่าหัวล้มเหลว!\n${game.spy.name} ทายผิดพลาด\n- ทายสถานที่: ${isLocationCorrect ? 'ถูกต้อง' : 'ผิด'}\n- ทายบทบาท: ${isRoleCorrect ? 'ถูกต้อง' : 'ผิด'}\nผู้เล่นทุกคน (ยกเว้นสายลับ) ได้รับ 2 คะแนน!`;
+    }
+    endGamePhase(roomCode, resultText, games, io);
+}
+
+
+module.exports = { generateRoomCode, startGame, startNewRound, endRound, submitVote, spyGuessLocation, getAvailableLocations, clearTimers, initiateBountyHunt, resolveBountyHunt };
 

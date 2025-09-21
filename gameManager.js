@@ -70,9 +70,13 @@ function startGame(roomCode, settings, games, io) {
 function gameLoop(roomCode, games, io) {
     const game = games[roomCode];
     if (!game || game.state !== 'playing') return;
-    game.timeLeft--;
-    io.to(roomCode).emit('timerUpdate', { timeLeft: Math.max(0, game.timeLeft), players: game.players });
-    if (game.timeLeft <= 0) {
+    
+    // FIX: เปลี่ยนจากการนับถอยหลังมาใช้เวลาจริงเพื่อความแม่นยำ
+    const timeLeft = Math.max(0, Math.round((game.roundEndTime - Date.now()) / 1000));
+    
+    io.to(roomCode).emit('timerUpdate', { timeLeft: timeLeft, players: game.players });
+    
+    if (timeLeft <= 0) {
         endRound(roomCode, "timer_end", games, io);
     } else {
         game.timer = setTimeout(() => gameLoop(roomCode, games, io), 1000);
@@ -196,8 +200,9 @@ function startNewRound(roomCode, games, io) {
         }
     });
 
-    game.timeLeft = game.settings.time;
-    io.to(roomCode).emit('timerUpdate', { timeLeft: game.timeLeft, players: game.players });
+    // FIX: ตั้งค่าเวลาสิ้นสุดของรอบแทนการนับถอยหลัง
+    game.roundEndTime = Date.now() + (game.settings.time * 1000);
+    io.to(roomCode).emit('timerUpdate', { timeLeft: game.settings.time, players: game.players });
     game.timer = setTimeout(() => gameLoop(roomCode, games, io), 1000);
 }
 

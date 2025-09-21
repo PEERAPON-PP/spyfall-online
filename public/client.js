@@ -3,14 +3,14 @@ const screens = { home: $('home-screen'), lobby: $('lobby-screen'), game: $('gam
 const modals = { locations: $('locations-modal'), voting: $('voting-modal'), spyGuess: $('spy-guess-modal'), waitingForSpy: $('waiting-for-spy-modal'), endRound: $('end-round-modal'), bountyHunt: $('bounty-hunt-modal'), waitingForBounty: $('waiting-for-bounty-modal') };
 const playerNameInput = $('player-name-input'), nameError = $('name-error'), createRoomBtn = $('create-room-btn'), roomCodeInput = $('room-code-input'), joinRoomBtn = $('join-room-btn');
 const lobbyRoomCode = $('lobby-room-code'), copyCodeBtn = $('copy-code-btn'), playerList = $('player-list'), startGameBtn = $('start-game-btn'), gameSettings = $('game-settings'), timerSelect = $('timer-select'), roundsSelect = $('rounds-select'), themeCheckboxes = $('theme-checkboxes'), lobbyMessage = $('lobby-message'), voteTimerSelect = $('vote-timer-select'), bountyHuntCheckbox = $('bounty-hunt-checkbox');
-const timerDisplay = $('timer'), locationDisplay = $('location-display'), roleDisplay = $('role-display'), roleDescDisplay = $('role-desc-display'), ingameActions = $('ingame-actions'), showLocationsBtn = $('show-locations-btn'), currentRoundSpan = $('current-round'), totalRoundsSpan = $('total-rounds'), inGameScoreboard = $('in-game-scoreboard'), hostEndRoundBtn = $('host-end-round-btn'), roleLabel = $('role-label'), gameRoomCode = $('game-room-code');
+const timerDisplay = $('timer'), locationDisplay = $('location-display'), roleDisplay = $('role-display'), roleDescDisplay = $('role-desc-display'), ingameActions = $('ingame-actions'), showLocationsBtn = $('show-locations-btn'), currentRoundSpan = $('current-round'), totalRoundsSpan = $('total-rounds'), inGameScoreboard = $('in-game-scoreboard'), hostEndRoundBtn = $('host-end-round-btn'), roleLabel = $('role-label'), gameRoomCode = $('game-room-code'), bountyTargetInfo = $('bounty-target-info');
 const locationsList = $('locations-list'), closeLocationsBtn = $('close-locations-btn'), voteReason = $('vote-reason'), voteTimerDisplay = $('vote-timer'), votePlayerButtons = $('vote-player-buttons'), abstainVoteBtn = $('abstain-vote-btn'), voteProgressCount = $('vote-progress-count'), voteProgressTotal = $('vote-progress-total'), voterStatusList = $('voter-status-list'), voteStatusContainer = $('vote-status-container');
 const spyLocationGuess = $('spy-location-guess'), confirmSpyGuessBtn = $('confirm-spy-guess-btn'), waitingSpyName = $('waiting-spy-name'), spyGuessTimer = $('spy-guess-timer');
 const endModalTitle = $('end-modal-title'), endLocation = $('end-location'), endSpy = $('end-spy'), roundResultText = $('round-result-text'), nextRoundBtn = $('next-round-btn'), backToLobbyBtn = $('back-to-lobby-btn');
 const bountyHuntBtn = $('bounty-hunt-btn');
 const bountyHuntTimer = $('bounty-hunt-timer'), bountyLocationGuess = $('bounty-location-guess'), bountyRoleGuess = $('bounty-role-guess'), bountyTargetName = $('bounty-target-name'), confirmBountyGuessBtn = $('confirm-bounty-guess-btn'), waitingBountySpyName = $('waiting-bounty-spy-name');
 
-let isHost = false, voteTimerInterval = null, playerToken = null, specialTimerInterval = null, currentRoundRoles = null, wakeLock = null;
+let isHost = false, voteTimerInterval = null, playerToken = null, specialTimerInterval = null, currentRoundRoles = null, wakeLock = null, allLocationsWithRoles = [];
 const socket = io();
 
 const requestWakeLock = async () => { if ('wakeLock' in navigator) try { wakeLock = await navigator.wakeLock.request('screen'); } catch (err) { console.error(`${err.name}, ${err.message}`); } };
@@ -79,6 +79,27 @@ roundsSelect.addEventListener('change', handleSettingChange);
 voteTimerSelect.addEventListener('change', handleSettingChange);
 bountyHuntCheckbox.addEventListener('change', handleSettingChange);
 themeCheckboxes.addEventListener('change', handleThemeChange);
+bountyLocationGuess.addEventListener('change', () => {
+    const selectedLocationName = bountyLocationGuess.value;
+    bountyRoleGuess.innerHTML = '<option value="">เลือกบทบาท...</option>';
+    bountyRoleGuess.disabled = true;
+    if (selectedLocationName) {
+        const locationData = allLocationsWithRoles.find(loc => loc.name === selectedLocationName);
+        if (locationData && locationData.roles) {
+            let uniqueRoles = new Set();
+            locationData.roles.forEach(roleString => {
+                uniqueRoles.add(roleString.match(/^(.*?)\s*\(/)?.[1].trim() || roleString);
+            });
+            uniqueRoles.forEach(roleName => {
+                const o = document.createElement('option');
+                o.value = roleName;
+                o.textContent = roleName;
+                bountyRoleGuess.appendChild(o);
+            });
+            bountyRoleGuess.disabled = false;
+        }
+    }
+});
 window.addEventListener('DOMContentLoaded', () => { playerNameInput.value = sessionStorage.getItem('playerName') || ''; playerToken = sessionStorage.getItem('playerToken'); if (!playerToken) { playerToken = generateToken(); sessionStorage.setItem('playerToken', playerToken); } });
 
 socket.on('roomCreated', d => { showScreen('lobby'); lobbyRoomCode.textContent = d.roomCode; });
@@ -109,6 +130,7 @@ socket.on('settingsUpdated', (settings) => { if (settings) { timerSelect.value =
 socket.on('gameStarted', (data) => {
     showScreen('game'); showModal(null); requestWakeLock();
     currentRoundRoles = data.allPlayerRoles || null;
+    allLocationsWithRoles = data.allLocationsData || [];
     const self = data.players.find(p => p.token === playerToken);
     isHost = self ? self.isHost : false;
     currentRoundSpan.textContent = data.round; totalRoundsSpan.textContent = data.totalRounds; gameRoomCode.textContent = lobbyRoomCode.textContent;
@@ -118,6 +140,11 @@ socket.on('gameStarted', (data) => {
     roleDisplay.classList.remove('role-spy', 'role-player');
     roleDisplay.classList.add(data.role === 'สายลับ' ? 'role-spy' : 'role-player');
     bountyHuntBtn.classList.toggle('hidden', !(data.role === 'สายลับ' && data.canBountyHunt));
+    bountyTargetInfo.classList.add('hidden');
+    if (data.bountyTargetName) {
+        bountyTargetInfo.textContent = `🎯 เป้าหมายล่าค่าหัว: ${data.bountyTargetName}`;
+        bountyTargetInfo.classList.remove('hidden');
+    }
     if (self?.isSpectator) { roleLabel.textContent = "สถานะ:"; updateScoreboard(data.players, inGameScoreboard, currentRoundRoles); }
     else {
         roleLabel.textContent = "บทบาท:";
@@ -138,7 +165,7 @@ socket.on('startVote', ({ players, reason, voteTime, isBotGame }) => {
     if (self?.isSpectator) { votePlayerButtons.innerHTML = '<p class="text-gray-500 italic">กำลังรอผู้เล่นอื่นโหวต...</p>'; abstainVoteBtn.classList.add('hidden'); }
     else {
         votePlayerButtons.innerHTML = '';
-        players.forEach(p => { if (p.token !== playerToken) { const btn = document.createElement('button'); btn.textContent = p.name; btn.className = 'btn btn-primary vote-btn w-full mb-2'; btn.onclick = () => { socket.emit('submitVote', p.id); votePlayerButtons.querySelectorAll('button').forEach(b => b.disabled = true); abstainVoteBtn.disabled = true; }; votePlayerButtons.appendChild(btn); } });
+        players.filter(p=>!p.disconnected).forEach(p => { if (p.token !== playerToken) { const btn = document.createElement('button'); btn.textContent = p.name; btn.className = 'btn btn-primary vote-btn w-full mb-2'; btn.onclick = () => { socket.emit('submitVote', p.id); votePlayerButtons.querySelectorAll('button').forEach(b => b.disabled = true); abstainVoteBtn.disabled = true; }; votePlayerButtons.appendChild(btn); } });
         abstainVoteBtn.disabled = false; abstainVoteBtn.classList.remove('hidden');
     }
     let timeLeft = voteTime; if (voteTimerInterval) clearInterval(voteTimerInterval); voteTimerDisplay.textContent = timeLeft;
@@ -147,7 +174,23 @@ socket.on('startVote', ({ players, reason, voteTime, isBotGame }) => {
 socket.on('voteUpdate', ({ voters, totalVoters }) => { voteProgressCount.textContent = voters.length; voteProgressTotal.textContent = totalVoters; voterStatusList.querySelectorAll('div').forEach(div => { const id = div.id.replace('voter-status-', ''); if(voters.includes(id)) { div.textContent = `${div.textContent.split(':')[0]}: ✅ โหวตแล้ว`; } }); });
 socket.on('spyGuessPhase', ({ locations, taunt, duration }) => { showModal('spyGuess'); spyLocationGuess.innerHTML = ''; locations.forEach(loc => { const o=document.createElement('option'); o.value=loc; o.textContent=loc; spyLocationGuess.appendChild(o); }); spyGuessTaunt.textContent = taunt || ""; let timeLeft = duration; if(specialTimerInterval) clearInterval(specialTimerInterval); spyGuessTimer.textContent = timeLeft; specialTimerInterval = setInterval(() => { if(--timeLeft >= 0) spyGuessTimer.textContent = timeLeft; else clearInterval(specialTimerInterval); }, 1000); });
 socket.on('spyIsGuessing', ({ spyName }) => { showModal('waitingForSpy'); waitingSpyName.textContent = spyName; });
-socket.on('bountyHuntPhase', ({ locations, targetName, duration }) => { showModal('bountyHunt'); bountyLocationGuess.innerHTML = '<option value="">เลือกสถานที่...</option>'; locations.forEach(loc => { const o=document.createElement('option'); o.value=loc; o.textContent=loc; bountyLocationGuess.appendChild(o); }); bountyRoleGuess.innerHTML = '<option value="">กรุณาเลือกสถานที่ก่อน</option>'; bountyRoleGuess.disabled = true; bountyTargetName.textContent = targetName; let timeLeft = duration; if(specialTimerInterval) clearInterval(specialTimerInterval); bountyHuntTimer.textContent = timeLeft; specialTimerInterval = setInterval(() => { if(--timeLeft >= 0) bountyHuntTimer.textContent = timeLeft; else clearInterval(specialTimerInterval); }, 1000); });
+socket.on('bountyHuntPhase', ({ targetName, duration }) => {
+    showModal('bountyHunt');
+    bountyLocationGuess.innerHTML = '<option value="">เลือกสถานที่...</option>';
+    allLocationsWithRoles.sort((a,b) => a.name.localeCompare(b.name, 'th')).forEach(loc => {
+        const o = document.createElement('option');
+        o.value = loc.name;
+        o.textContent = loc.name;
+        bountyLocationGuess.appendChild(o);
+    });
+    bountyRoleGuess.innerHTML = '<option value="">กรุณาเลือกสถานที่ก่อน</option>';
+    bountyRoleGuess.disabled = true;
+    bountyTargetName.textContent = targetName;
+    let timeLeft = duration;
+    if (specialTimerInterval) clearInterval(specialTimerInterval);
+    bountyHuntTimer.textContent = timeLeft;
+    specialTimerInterval = setInterval(() => { if (--timeLeft >= 0) bountyHuntTimer.textContent = timeLeft; else clearInterval(specialTimerInterval); }, 1000);
+});
 socket.on('waitingForBountyHunt', ({spyName}) => { showModal('waitingForBounty'); waitingBountySpyName.textContent = spyName; });
 socket.on('roundOver', ({ location, spyName, resultText, isFinalRound, players }) => {
     showModal('endRound');

@@ -45,25 +45,33 @@
                     <div>
                         <label for="timer-select" class="block text-sm font-medium">เวลาเล่นต่อรอบ:</label>
                         <select id="timer-select" data-setting="time" class="input-field w-full">
+                            <option value="10">10 วินาที</option>
                             <option value="180">3 นาที</option>
                             <option value="300" selected>5 นาที</option>
                             <option value="480">8 นาที</option>
+                            <option value="600">10 นาที</option>
+                            <option value="900">15 นาที</option>
                         </select>
                     </div>
                     <div>
                         <label for="rounds-select" class="block text-sm font-medium">รอบ:</label>
                         <select id="rounds-select" data-setting="rounds" class="input-field w-full">
-                            <option value="1">1</option>
-                            <option value="3">3</option>
-                            <option value="5" selected>5</option>
+                            <option value="1">1 รอบ</option>
+                            <option value="2">2 รอบ</option>
+                            <option value="3">3 รอบ</option>
+                            <option value="5" selected>5 รอบ</option>
+                            <option value="8">8 รอบ</option>
+                            <option value="10">10 รอบ</option>
                         </select>
                     </div>
                  </div>
                  <div class="mb-4">
                     <label for="vote-timer-select" class="block text-sm font-medium">เวลาโหวตต่อรอบ:</label>
                     <select id="vote-timer-select" data-setting="voteTime" class="input-field w-full">
+                        <option value="10">10 วินาที</option>
                         <option value="30" selected>30 วินาที</option>
                         <option value="60">1 นาที</option>
+                        <option value="90">1 นาที 30 วินาที</option>
                         <option value="120">2 นาที</option>
                     </select>
                 </div>
@@ -118,10 +126,10 @@
         <!-- Modals -->
         <div id="locations-modal" class="modal-overlay hidden"><div class="card modal-card max-h-[80vh] overflow-y-auto"><h3 class="text-xl font-bold mb-4">รายชื่อสถานที่</h3><div id="locations-list" class="location-grid text-sm"></div><button id="close-locations-btn" class="btn btn-primary w-full mt-6">ปิด</button></div></div>
         <div id="voting-modal" class="modal-overlay hidden"><div class="card modal-card text-center modal-player"><h3 id="vote-reason" class="text-2xl font-bold mb-2">โหวตหาตัวสายลับ</h3><p class="mb-4">เหลือเวลา <span id="vote-timer" class="font-bold">30</span> วินาที</p>
-            <div class="mb-4 text-sm"><p class="font-semibold">สถานะการโหวต (<span id="vote-progress-count">0</span>/<span id="vote-progress-total">0</span>):</p><div id="voter-status-list" class="mt-2 text-left text-gray-600 space-y-1"></div></div>
+            <div id="vote-status-container" class="mb-4 text-sm hidden"><p class="font-semibold">สถานะการโหวต (<span id="vote-progress-count">0</span>/<span id="vote-progress-total">0</span>):</p><div id="voter-status-list" class="mt-2 text-left text-gray-600 space-y-1"></div></div>
             <div id="vote-player-buttons" class="mb-4"></div><button id="abstain-vote-btn" class="btn btn-secondary w-full text-sm py-2">งดออกเสียง</button></div></div>
         <div id="spy-guess-modal" class="modal-overlay hidden"><div class="card modal-card text-center modal-spy"><h3 class="text-2xl font-bold mb-4 text-red-600">คุณคือสายลับ!</h3><p id="spy-guess-taunt" class="mb-2 text-red-500 font-semibold"></p><p class="mb-4">คุณหนีรอดมาได้! เลือกทายสถานที่เพื่อรับคะแนนพิเศษ (เหลือเวลา <span id="spy-guess-timer" class="font-bold">60</span> วิ)</p><select id="spy-location-guess" class="input-field mb-4"></select><button id="confirm-spy-guess-btn" class="btn btn-primary w-full">ยืนยัน</button></div></div>
-        <div id="waiting-for-spy-modal" class="modal-overlay hidden"><div class="card modal-card text-center modal-player"><h3 class="text-2xl font-bold mb-4 text-red-600">สายลับหนีรอด!</h3><p id="waiting-taunt" class="mb-2"></p><p>กำลังรอ <span id="waiting-spy-name" class="font-bold"></span> ทายสถานที่...</p></div></div>
+        <div id="waiting-for-spy-modal" class="modal-overlay hidden"><div class="card modal-card text-center modal-player"><h3 class="text-2xl font-bold mb-4 text-red-600">สายลับหนีรอด!</h3><p>กำลังรอ <span id="waiting-spy-name" class="font-bold"></span> ทายสถานที่...</p></div></div>
         <div id="end-round-modal" class="modal-overlay hidden"><div class="card modal-card text-center"><h3 id="end-modal-title" class="text-2xl font-bold mb-4">จบรอบ</h3><p class="text-lg mb-2">สถานที่คือ:</p><p id="end-location" class="text-xl font-semibold text-indigo-600 mb-4"></p><p class="text-lg mb-2">สายลับคือ:</p><p id="end-spy" class="text-xl font-semibold text-red-500 mb-4"></p><p id="round-result-text" class="text-gray-700 my-4 whitespace-pre-wrap"></p><button id="next-round-btn" class="btn btn-primary w-full hidden">รอบต่อไป</button><button id="back-to-lobby-btn" class="btn btn-secondary w-full hidden">กลับไปที่ล็อบบี้</button></div></div>
         
         <div id="bounty-hunt-modal" class="modal-overlay hidden"><div class="card modal-card text-center modal-spy"><h3 class="text-2xl font-bold mb-2 text-red-600">ล่าค่าหัว!</h3><p class="mb-4">คุณมีเวลา <span id="bounty-hunt-timer" class="font-bold">60</span> วินาทีในการทาย</p><div class="space-y-4"><div><label for="bounty-location-guess" class="block text-sm font-medium text-left">1. ทายสถานที่:</label><select id="bounty-location-guess" class="input-field"></select></div><div><label for="bounty-role-guess" class="block text-sm font-medium text-left">2. ทายบทบาทของ <span id="bounty-target-name" class="font-bold"></span>:</label><select id="bounty-role-guess" class="input-field"></select></div></div><button id="confirm-bounty-guess-btn" class="btn btn-primary w-full mt-6">ยืนยันคำตอบ</button></div></div>

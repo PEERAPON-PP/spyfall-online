@@ -5,7 +5,7 @@ const playerNameInput = $('player-name-input'), nameError = $('name-error'), cre
 const lobbyRoomCode = $('lobby-room-code'), copyCodeBtn = $('copy-code-btn'), playerList = $('player-list'), startGameBtn = $('start-game-btn'), gameSettings = $('game-settings'), timerSelect = $('timer-select'), roundsSelect = $('rounds-select'), themeCheckboxes = $('theme-checkboxes'), lobbyMessage = $('lobby-message'), voteTimerSelect = $('vote-timer-select'), bountyHuntCheckbox = $('bounty-hunt-checkbox');
 const timerDisplay = $('timer'), locationDisplay = $('location-display'), roleDisplay = $('role-display'), roleDescDisplay = $('role-desc-display'), ingameActions = $('ingame-actions'), showLocationsBtn = $('show-locations-btn'), currentRoundSpan = $('current-round'), totalRoundsSpan = $('total-rounds'), inGameScoreboard = $('in-game-scoreboard'), hostEndRoundBtn = $('host-end-round-btn'), roleLabel = $('role-label'), gameRoomCode = $('game-room-code');
 const locationsList = $('locations-list'), closeLocationsBtn = $('close-locations-btn'), voteReason = $('vote-reason'), voteTimerDisplay = $('vote-timer'), votePlayerButtons = $('vote-player-buttons'), abstainVoteBtn = $('abstain-vote-btn'), voteProgressCount = $('vote-progress-count'), voteProgressTotal = $('vote-progress-total'), voterStatusList = $('voter-status-list'), voteStatusContainer = $('vote-status-container');
-const spyLocationGuess = $('spy-location-guess'), confirmSpyGuessBtn = $('confirm-spy-guess-btn'), waitingSpyName = $('waiting-spy-name'), spyGuessTaunt = $('spy-guess-taunt'), spyGuessTimer = $('spy-guess-timer');
+const spyLocationGuess = $('spy-location-guess'), confirmSpyGuessBtn = $('confirm-spy-guess-btn'), waitingSpyName = $('waiting-spy-name'), spyGuessTimer = $('spy-guess-timer');
 const endModalTitle = $('end-modal-title'), endLocation = $('end-location'), endSpy = $('end-spy'), roundResultText = $('round-result-text'), nextRoundBtn = $('next-round-btn'), backToLobbyBtn = $('back-to-lobby-btn');
 const bountyHuntBtn = $('bounty-hunt-btn');
 const bountyHuntTimer = $('bounty-hunt-timer'), bountyLocationGuess = $('bounty-location-guess'), bountyRoleGuess = $('bounty-role-guess'), bountyTargetName = $('bounty-target-name'), confirmBountyGuessBtn = $('confirm-bounty-guess-btn'), waitingBountySpyName = $('waiting-bounty-spy-name');
@@ -58,6 +58,8 @@ function updateScoreboard(players, container, allPlayerRoles = null) {
     spectators.forEach(p => container.appendChild(createPlayerRow(p)));
 }
 function generateToken() { return ([1e7]+-1e3+-4e3+-8e3+-1e11).replace(/[018]/g, c => (c ^ crypto.getRandomValues(new Uint8Array(1))[0] & 15 >> c / 4).toString(16)); }
+function handleSettingChange(e){ if(isHost) socket.emit('settingChanged', { setting: e.target.dataset.setting, value: e.target.type === 'checkbox' ? e.target.checked : e.target.value });}
+function handleThemeChange(){ if(isHost) socket.emit('settingChanged', { setting: 'themes', value: Array.from(themeCheckboxes.querySelectorAll('input:checked')).map(cb => cb.dataset.theme) });}
 
 createRoomBtn.addEventListener('click', () => { const n = playerNameInput.value.trim(); if (!n) { nameError.classList.remove('hidden'); return; } nameError.classList.add('hidden'); if (!playerToken) { playerToken = generateToken(); sessionStorage.setItem('playerToken', playerToken); } sessionStorage.setItem('playerName', n); socket.emit('createRoom', { playerName: n, playerToken }); });
 joinRoomBtn.addEventListener('click', () => { const n = playerNameInput.value.trim(); const c = roomCodeInput.value.trim().toUpperCase(); if (!n) { nameError.classList.remove('hidden'); return; } nameError.classList.add('hidden'); if (!c) return; if (!playerToken) { playerToken = generateToken(); sessionStorage.setItem('playerToken', playerToken); } sessionStorage.setItem('playerName', n); socket.emit('joinRoom', { playerName: n, roomCode: c, playerToken }); });
@@ -72,7 +74,11 @@ closeLocationsBtn.addEventListener('click', () => showModal(null));
 confirmSpyGuessBtn.addEventListener('click', () => { socket.emit('spyGuessLocation', spyLocationGuess.value); showModal(null); });
 bountyHuntBtn.addEventListener('click', () => socket.emit('spyDeclareBounty'));
 confirmBountyGuessBtn.addEventListener('click', () => { socket.emit('submitBountyGuess', { location: bountyLocationGuess.value, role: bountyRoleGuess.value }); showModal(null); });
-bountyLocationGuess.addEventListener('change', () => { const locName = bountyLocationGuess.value; bountyRoleGuess.innerHTML = '<option value="">เลือกบทบาท...</option>'; if (!locName) { bountyRoleGuess.disabled = true; return; } const locData = getAvailableLocations(game.settings.themes).find(l => l.name === locName); if (locData) { locData.roles.forEach(r => { const rName = r.split('(')[0].trim(); if (rName !== 'สายลับ') { const o = document.createElement('option'); o.value = rName; o.textContent = rName; bountyRoleGuess.appendChild(o); } }); bountyRoleGuess.disabled = false; } });
+timerSelect.addEventListener('change', handleSettingChange);
+roundsSelect.addEventListener('change', handleSettingChange);
+voteTimerSelect.addEventListener('change', handleSettingChange);
+bountyHuntCheckbox.addEventListener('change', handleSettingChange);
+themeCheckboxes.addEventListener('change', handleThemeChange);
 window.addEventListener('DOMContentLoaded', () => { playerNameInput.value = sessionStorage.getItem('playerName') || ''; playerToken = sessionStorage.getItem('playerToken'); if (!playerToken) { playerToken = generateToken(); sessionStorage.setItem('playerToken', playerToken); } });
 
 socket.on('roomCreated', d => { showScreen('lobby'); lobbyRoomCode.textContent = d.roomCode; });
@@ -109,6 +115,8 @@ socket.on('gameStarted', (data) => {
     hostEndRoundBtn.classList.toggle('hidden', !isHost || self?.isSpectator);
     ingameActions.classList.toggle('hidden', !!self?.isSpectator);
     locationDisplay.textContent = data.location; roleDisplay.textContent = data.role;
+    roleDisplay.classList.remove('role-spy', 'role-player');
+    roleDisplay.classList.add(data.role === 'สายลับ' ? 'role-spy' : 'role-player');
     bountyHuntBtn.classList.toggle('hidden', !(data.role === 'สายลับ' && data.canBountyHunt));
     if (self?.isSpectator) { roleLabel.textContent = "สถานะ:"; updateScoreboard(data.players, inGameScoreboard, currentRoundRoles); }
     else {

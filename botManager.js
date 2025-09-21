@@ -10,10 +10,10 @@ if (process.env.GEMINI_API_KEY) {
 const BOT_NAMES = ["Leo", "Mia", "Zoe", "Kai", "Eva"];
 
 /**
- * สร้างและเริ่มเกมสำหรับบอต
- * @param {object} humanPlayerSocket - Socket object ของผู้เล่นที่เป็นมนุษย์
- * @param {object} io - Socket.IO instance
- * @param {object} games - อ็อบเจกต์ที่เก็บข้อมูลเกมทั้งหมด
+ * Creates and starts a bot game.
+ * @param {object} humanPlayerSocket - The socket object of the human player.
+ * @param {object} io - The Socket.IO instance.
+ * @param {object} games - The object holding all game data.
  */
 async function createBotGame(humanPlayerSocket, io, games) {
     if (!genAI) {
@@ -38,28 +38,28 @@ async function createBotGame(humanPlayerSocket, io, games) {
     };
     games[roomCode] = game;
 
-    // เพิ่มผู้เล่นที่เป็นมนุษย์ในฐานะผู้ชม
+    // Add the human player as a SPECTATOR HOST
     const humanPlayerData = {
         id: uuidv4(),
         socketId: humanPlayerSocket.id,
         name: humanPlayerSocket.playerName,
-        isHost: false,
+        isHost: true, // The human is the host
         score: 0,
         token: humanPlayerSocket.playerToken,
-        isSpectator: true,
+        isSpectator: true, // But is also a spectator
         disconnected: false
     };
     game.players.push(humanPlayerData);
     humanPlayerSocket.join(roomCode);
     humanPlayerSocket.roomCode = roomCode;
 
-    // เพิ่มผู้เล่นบอต
+    // Add bot players
     BOT_NAMES.forEach(name => {
         game.players.push({
             id: uuidv4(),
             socketId: `bot_${name}`,
             name: `(Bot) ${name}`,
-            isHost: false,
+            isHost: false, // Bots are not hosts
             score: 0,
             token: `bot_${uuidv4()}`,
             isSpectator: false,
@@ -67,25 +67,18 @@ async function createBotGame(humanPlayerSocket, io, games) {
             isBot: true
         });
     });
-    
-    const firstBot = game.players.find(p => p.isBot);
-    if(firstBot) firstBot.isHost = true;
 
     humanPlayerSocket.emit('joinSuccess', { roomCode });
     io.to(roomCode).emit('updatePlayerList', { players: game.players, settings: game.settings });
     
-    // เริ่มเกมอัตโนมัติ
-    setTimeout(() => {
-        console.log(`Starting bot game ${roomCode}...`);
-        gameManager.startGame(roomCode, game.settings, games, io);
-    }, 3000);
+    // Automatic game start has been removed. The human host now starts the game.
 }
 
 /**
- * สั่งให้บอตทำการโหวตโดยใช้ Gemini
- * @param {string} roomCode - รหัสห้อง
- * @param {object} io - Socket.IO instance
- * @param {object} games - อ็อบเจกต์ที่เก็บข้อมูลเกมทั้งหมด
+ * Has bots vote using Gemini.
+ * @param {string} roomCode - The room code.
+ * @param {object} io - The Socket.IO instance.
+ * @param {object} games - The object holding all game data.
  */
 async function runBotVote(roomCode, io, games) {
     const game = games[roomCode];
@@ -136,3 +129,4 @@ async function runBotVote(roomCode, io, games) {
 }
 
 module.exports = { createBotGame, runBotVote };
+

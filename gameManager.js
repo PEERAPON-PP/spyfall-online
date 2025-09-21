@@ -74,7 +74,14 @@ function clearTimers(game) { clearTimeout(game.timer); clearTimeout(game.voteTim
 function startGame(roomCode, settings, games, io) {
     const game = games[roomCode];
     if (!game || game.players.filter(p => !p.disconnected && !p.isSpectator).length < 1) return;
-    game.settings = { ...settings, useGemini: !!genAI };
+    game.settings = {
+        time: parseInt(settings.time) || 300,
+        rounds: parseInt(settings.rounds) || 5,
+        themes: settings.themes || ['default'],
+        voteTime: parseInt(settings.voteTime) || 30,
+        bountyHuntEnabled: settings.bountyHuntEnabled || false,
+        useGemini: !!genAI && game.isBotGame // Only use Gemini in bot games
+    };
     game.locationDeck = createBalancedDeck(game.settings.themes);
     game.currentRound = 0;
     startNewRound(roomCode, games, io);
@@ -155,7 +162,7 @@ function endRound(roomCode, reason, games, io) {
     game.state = 'voting';
     game.resultsCalculated = false;
     const activePlayers = game.players.filter(p => !p.disconnected && !p.isSpectator);
-    io.to(roomCode).emit('startVote', { players: activePlayers, reason: reason === 'timer_end' ? 'หมดเวลา! โหวตหาตัวสายลับ' : 'หัวหน้าห้องสั่งจบรอบ!', voteTime: game.settings.voteTime });
+    io.to(roomCode).emit('startVote', { players: activePlayers, reason: reason === 'timer_end' ? 'หมดเวลา! โหวตหาตัวสายลับ' : 'หัวหน้าห้องสั่งจบรอบ!', voteTime: game.settings.voteTime, isBotGame: game.isBotGame || false });
     game.voteTimer = setTimeout(() => calculateVoteResults(roomCode, games, io), game.settings.voteTime * 1000);
     if (game.isBotGame) botManager.runBotVote(roomCode, io, games, submitVote);
 }

@@ -4,8 +4,8 @@ const modals = { locations: $('locations-modal'), voting: $('voting-modal'), spy
 const playerNameInput = $('player-name-input'), nameError = $('name-error'), createRoomBtn = $('create-room-btn'), roomCodeInput = $('room-code-input'), joinRoomBtn = $('join-room-btn');
 const lobbyRoomCode = $('lobby-room-code'), copyCodeBtn = $('copy-code-btn'), playerList = $('player-list'), startGameBtn = $('start-game-btn'), gameSettings = $('game-settings'), timerSelect = $('timer-select'), roundsSelect = $('rounds-select'), themeCheckboxes = $('theme-checkboxes'), lobbyMessage = $('lobby-message'), voteTimerSelect = $('vote-timer-select'), bountyHuntCheckbox = $('bounty-hunt-checkbox');
 const timerDisplay = $('timer'), locationDisplay = $('location-display'), roleDisplay = $('role-display'), roleDescDisplay = $('role-desc-display'), ingameActions = $('ingame-actions'), showLocationsBtn = $('show-locations-btn'), currentRoundSpan = $('current-round'), totalRoundsSpan = $('total-rounds'), inGameScoreboard = $('in-game-scoreboard'), hostEndRoundBtn = $('host-end-round-btn'), roleLabel = $('role-label'), gameRoomCode = $('game-room-code');
-const locationsList = $('locations-list'), closeLocationsBtn = $('close-locations-btn'), voteReason = $('vote-reason'), voteTimerDisplay = $('vote-timer'), votePlayerButtons = $('vote-player-buttons'), abstainVoteBtn = $('abstain-vote-btn'), voteProgressCount = $('vote-progress-count'), voteProgressTotal = $('vote-progress-total'), voterStatusList = $('voter-status-list');
-const spyLocationGuess = $('spy-location-guess'), confirmSpyGuessBtn = $('confirm-spy-guess-btn'), waitingSpyName = $('waiting-spy-name'), waitingTaunt = $('waiting-taunt'), spyGuessTaunt = $('spy-guess-taunt'), spyGuessTimer = $('spy-guess-timer');
+const locationsList = $('locations-list'), closeLocationsBtn = $('close-locations-btn'), voteReason = $('vote-reason'), voteTimerDisplay = $('vote-timer'), votePlayerButtons = $('vote-player-buttons'), abstainVoteBtn = $('abstain-vote-btn'), voteProgressCount = $('vote-progress-count'), voteProgressTotal = $('vote-progress-total'), voterStatusList = $('voter-status-list'), voteStatusContainer = $('vote-status-container');
+const spyLocationGuess = $('spy-location-guess'), confirmSpyGuessBtn = $('confirm-spy-guess-btn'), waitingSpyName = $('waiting-spy-name'), spyGuessTaunt = $('spy-guess-taunt'), spyGuessTimer = $('spy-guess-timer');
 const endModalTitle = $('end-modal-title'), endLocation = $('end-location'), endSpy = $('end-spy'), roundResultText = $('round-result-text'), nextRoundBtn = $('next-round-btn'), backToLobbyBtn = $('back-to-lobby-btn');
 const bountyHuntBtn = $('bounty-hunt-btn');
 const bountyHuntTimer = $('bounty-hunt-timer'), bountyLocationGuess = $('bounty-location-guess'), bountyRoleGuess = $('bounty-role-guess'), bountyTargetName = $('bounty-target-name'), confirmBountyGuessBtn = $('confirm-bounty-guess-btn'), waitingBountySpyName = $('waiting-bounty-spy-name');
@@ -23,11 +23,7 @@ function showModal(modalName) { if(specialTimerInterval) clearInterval(specialTi
 function updateScoreboard(players, container, allPlayerRoles = null) {
     container.innerHTML = '';
     const self = players.find(p => p.token === playerToken);
-    let playersToList = players;
-    // For in-game scoreboard, filter out spectators
-    if (container === inGameScoreboard) {
-        playersToList = players.filter(p => !p.isSpectator);
-    }
+    let playersToList = (container === inGameScoreboard) ? players.filter(p => !p.isSpectator) : players;
     const activePlayers = playersToList.filter(p => !p.isSpectator).sort((a, b) => b.score - a.score);
     const spectators = playersToList.filter(p => p.isSpectator).sort((a, b) => b.score - a.score);
     
@@ -103,7 +99,7 @@ socket.on('updatePlayerList', ({players, settings}) => {
         lobbyMessage.textContent = self?.isSpectator ? 'คุณอยู่ในโหมดผู้ชม รอหัวหน้าห้องเริ่มเกม' : 'กำลังรอหัวหน้าห้องเริ่มเกม...';
     }
 });
-socket.on('settingsUpdated', (settings) => { if (!isHost && settings) { timerSelect.value = settings.time; roundsSelect.value = settings.rounds; voteTimerSelect.value = settings.voteTime; bountyHuntCheckbox.checked = settings.bountyHuntEnabled; themeCheckboxes.querySelectorAll('input').forEach(cb => cb.checked = settings.themes?.includes(cb.dataset.theme)); }});
+socket.on('settingsUpdated', (settings) => { if (settings) { timerSelect.value = settings.time; roundsSelect.value = settings.rounds; voteTimerSelect.value = settings.voteTime; bountyHuntCheckbox.checked = settings.bountyHuntEnabled; themeCheckboxes.querySelectorAll('input').forEach(cb => cb.checked = settings.themes?.includes(cb.dataset.theme)); }});
 socket.on('gameStarted', (data) => {
     showScreen('game'); showModal(null); requestWakeLock();
     currentRoundRoles = data.allPlayerRoles || null;
@@ -124,10 +120,11 @@ socket.on('gameStarted', (data) => {
     (data.allLocations || []).forEach(locName => { const div = document.createElement('div'); div.textContent = locName; div.className = 'p-2 bg-gray-100 rounded location-item font-bold'; div.onclick = () => div.classList.toggle('eliminated'); locationsList.appendChild(div); });
 });
 socket.on('timerUpdate', ({ timeLeft, players }) => { timerDisplay.textContent = `${String(Math.floor(timeLeft/60)).padStart(2,'0')}:${String(timeLeft%60).padStart(2,'0')}`; if (screens.game.offsetParent) { const self = players.find(p => p.token === playerToken); updateScoreboard(players, inGameScoreboard, self?.isSpectator ? currentRoundRoles : null); }});
-socket.on('startVote', ({ players, reason, voteTime }) => {
+socket.on('startVote', ({ players, reason, voteTime, isBotGame }) => {
     showModal('voting');
     voteReason.textContent = reason;
     const self = players.find(p => p.token === playerToken);
+    voteStatusContainer.classList.toggle('hidden', !isBotGame);
     voterStatusList.innerHTML = '';
     players.forEach(p => { const div = document.createElement('div'); div.id = `voter-status-${p.id}`; div.textContent = `${p.name}: ⏳ กำลังตัดสินใจ...`; voterStatusList.appendChild(div); });
     if (self?.isSpectator) { votePlayerButtons.innerHTML = '<p class="text-gray-500 italic">กำลังรอผู้เล่นอื่นโหวต...</p>'; abstainVoteBtn.classList.add('hidden'); }

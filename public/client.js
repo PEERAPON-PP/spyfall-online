@@ -12,9 +12,35 @@ const bountyHuntBtn = $('bounty-hunt-btn'), spyTargetDisplay = $('spy-target-dis
 const bountyHuntTimer = $('bounty-hunt-timer'), bountyLocationGuess = $('bounty-location-guess'), bountyRoleGuess = $('bounty-role-guess'), bountyTargetName = $('bounty-target-name'), confirmBountyGuessBtn = $('confirm-bounty-guess-btn'), waitingBountySpyName = $('waiting-bounty-spy-name');
 
 let isHost = false, voteTimerInterval = null, playerToken = null, specialTimerInterval = null;
-let currentRoundLocationsData = []; // Store full location data for the round
-let currentRoundRoles = null; // Store roles for spectator view
+let currentRoundLocationsData = [];
+let currentRoundRoles = null;
+let wakeLock = null;
 const socket = io();
+
+// --- Screen Wake Lock ---
+const requestWakeLock = async () => {
+    if ('wakeLock' in navigator) {
+        try {
+            wakeLock = await navigator.wakeLock.request('screen');
+            wakeLock.addEventListener('release', () => console.log('Wake Lock was released.'));
+            console.log('Wake Lock is active.');
+        } catch (err) {
+            console.error(`${err.name}, ${err.message}`);
+        }
+    }
+};
+const releaseWakeLock = async () => {
+    if (wakeLock !== null) {
+        await wakeLock.release();
+        wakeLock = null;
+    }
+};
+document.addEventListener('visibilitychange', async () => {
+    if (wakeLock !== null && document.visibilityState === 'visible') {
+        await requestWakeLock();
+    }
+});
+
 
 // --- Utility Functions ---
 function showScreen(screenName) { Object.values(screens).forEach(s => s.classList.add('hidden')); screens[screenName].classList.remove('hidden'); }
@@ -27,7 +53,7 @@ function showModal(modalName) {
 
 function updateScoreboard(players, container, allPlayerRoles = null) {
     container.innerHTML = '';
-    const self = players.find(p => p.socketId === socket.id);
+    const self = players.find(p => p.token === playerToken); // Use token for identification
     const activePlayers = players.filter(p => !p.isSpectator).sort((a, b) => b.score - a.score);
     const spectators = players.filter(p => p.isSpectator).sort((a, b) => b.score - a.score);
 
@@ -35,36 +61,20 @@ function updateScoreboard(players, container, allPlayerRoles = null) {
         const playerDiv = document.createElement('div');
         playerDiv.className = 'flex justify-between items-center bg-gray-100 p-2 rounded';
         if (player.disconnected) playerDiv.classList.add('player-disconnected');
-        if (self && player.id === self.id) {
-            playerDiv.classList.remove('bg-gray-100');
-            playerDiv.classList.add('bg-indigo-100', 'border', 'border-indigo-300');
-        }
+        if (self && player.id === self.id) playerDiv.classList.add('bg-indigo-100', 'border', 'border-indigo-300');
+        
         const leftDiv = document.createElement('div');
         leftDiv.className = 'flex-grow flex items-center space-x-2';
         const nameSpan = document.createElement('span');
-        
-        // --- NEW ICON LOGIC ---
-        let prefix = '';
-        if (player.isHost) {
-            prefix = '👑 ';
-        } else if (player.isSpectator) {
-            prefix = '🔎 ';
-        } else {
-            prefix = '🎮 ';
-        }
-        
-        let statusText = '';
-        if (container === playerList && player.isSpectator === 'waiting') {
-            statusText = ' (รอเล่นรอบถัดไป)';
-        }
-        nameSpan.innerHTML = `${prefix}${player.name}<span class="text-gray-500">${statusText}</span>`;
+        let prefix = player.isHost ? '👑 ' : (player.isSpectator ? '🔎 ' : '🎮 ');
+        nameSpan.innerHTML = `${prefix}${player.name}<span class="text-gray-500">${container === playerList && player.isSpectator === 'waiting' ? ' (รอเล่นรอบถัดไป)' : ''}</span>`;
         leftDiv.appendChild(nameSpan);
 
         if (allPlayerRoles) {
             const roleSpan = document.createElement('span');
             roleSpan.className = 'text-sm';
             const playerRoleData = allPlayerRoles.find(r => r.id === player.id);
-            if (playerRoleData && playerRoleData.role !== 'สายลับ') { // Don't reveal spy role unless it's the end of round scoreboard
+            if (playerRoleData) {
                roleSpan.innerHTML = `- <span class="font-semibold text-indigo-600">${playerRoleData.role}</span>`;
                leftDiv.appendChild(roleSpan);
             }
@@ -76,36 +86,33 @@ function updateScoreboard(players, container, allPlayerRoles = null) {
         scoreSpan.textContent = `${player.score} คะแนน`;
         rightDiv.appendChild(scoreSpan);
         
-        if (container === playerList) {
-            if (self && player.id === self.id && !player.isHost) {
-                const toggleBtn = document.createElement('button');
-                toggleBtn.textContent = player.isSpectator ? 'สลับเป็นผู้เล่น' : 'สลับเป็นผู้ชม';
-                toggleBtn.className = 'btn btn-secondary btn-sm';
-                toggleBtn.onclick = () => socket.emit('toggleSpectatorMode');
-                rightDiv.appendChild(toggleBtn);
-            }
-            if (self && self.isHost && player.id !== self.id) {
-                 const kickButton = document.createElement('button');
-                 kickButton.textContent = 'เตะ';
-                 kickButton.className = 'btn bg-red-500 hover:bg-red-600 text-white btn-sm';
-                 kickButton.onclick = () => socket.emit('kickPlayer', player.id);
-                 rightDiv.appendChild(kickButton);
-            }
+        if (container === playerList && self && player.id === self.id && !player.isHost) {
+            const toggleBtn = document.createElement('button');
+            toggleBtn.textContent = player.isSpectator ? 'สลับเป็นผู้เล่น' : 'สลับเป็นผู้ชม';
+            toggleBtn.className = 'btn btn-secondary btn-sm';
+            toggleBtn.onclick = () => socket.emit('toggleSpectatorMode');
+            rightDiv.appendChild(toggleBtn);
+        }
+        if (container === playerList && self && self.isHost && player.id !== self.id) {
+             const kickButton = document.createElement('button');
+             kickButton.textContent = 'เตะ';
+             kickButton.className = 'btn bg-red-500 hover:bg-red-600 text-white btn-sm';
+             kickButton.onclick = () => socket.emit('kickPlayer', player.id);
+             rightDiv.appendChild(kickButton);
         }
         playerDiv.appendChild(leftDiv);
         playerDiv.appendChild(rightDiv);
         return playerDiv;
     };
     
-    if(activePlayers.length > 0){
-        if(container === playerList){
-            const p_divider = document.createElement('div');
-            p_divider.className = 'text-center text-gray-500 text-sm py-1 font-semibold';
-            p_divider.textContent = '--- ผู้เล่น ---';
-            container.appendChild(p_divider);
-        }
-        activePlayers.forEach(player => container.appendChild(createPlayerRow(player)));
+    if(activePlayers.length > 0 && container === playerList){
+        const p_divider = document.createElement('div');
+        p_divider.className = 'text-center text-gray-500 text-sm py-1 font-semibold';
+        p_divider.textContent = '--- ผู้เล่น ---';
+        container.appendChild(p_divider);
     }
+    activePlayers.forEach(player => container.appendChild(createPlayerRow(player)));
+    
     if (spectators.length > 0 && container === playerList) {
         const s_divider = document.createElement('div');
         s_divider.className = 'text-center text-gray-500 text-sm py-1 font-semibold';
@@ -120,38 +127,14 @@ function submitVote(playerId) {
     votePlayerButtons.querySelectorAll('button').forEach(btn => btn.disabled = true);
     abstainVoteBtn.disabled = true;
 }
-function setGameTheme(role) {
-    screens.game.classList.remove('theme-spy', 'theme-player');
-    if (role === 'สายลับ') screens.game.classList.add('theme-spy');
-    else screens.game.classList.add('theme-player');
-}
 
 // --- Event Listeners ---
-function handleSettingChange(event) {
-    if (isHost) {
-        const setting = event.target.dataset.setting;
-        const value = event.target.type === 'checkbox' ? event.target.checked : event.target.value;
-        socket.emit('settingChanged', { setting, value });
-    }
-}
-function handleThemeChange() {
-    if(isHost) {
-        const selectedThemes = Array.from(themeCheckboxes.querySelectorAll('input:checked')).map(cb => cb.dataset.theme);
-        socket.emit('settingChanged', { setting: 'themes', value: selectedThemes });
-    }
-}
-timerSelect.addEventListener('change', handleSettingChange);
-roundsSelect.addEventListener('change', handleSettingChange);
-voteTimerSelect.addEventListener('change', handleSettingChange);
-themeCheckboxes.addEventListener('change', handleThemeChange);
-bountyHuntCheckbox.addEventListener('change', handleSettingChange);
-
 createRoomBtn.addEventListener('click', () => {
     const n = playerNameInput.value.trim();
     if (!n) { nameError.classList.remove('hidden'); return; }
     nameError.classList.add('hidden');
-    if (!playerToken) { playerToken = generateToken(); localStorage.setItem('playerToken', playerToken); }
-    localStorage.setItem('playerName', n); // Save player name
+    if (!playerToken) { playerToken = generateToken(); sessionStorage.setItem('playerToken', playerToken); }
+    sessionStorage.setItem('playerName', n);
     socket.emit('createRoom', { playerName: n, playerToken });
 });
 joinRoomBtn.addEventListener('click', () => {
@@ -160,17 +143,14 @@ joinRoomBtn.addEventListener('click', () => {
     if (!n) { nameError.classList.remove('hidden'); return; }
     nameError.classList.add('hidden');
     if (!c) return;
-    if (!playerToken) { playerToken = generateToken(); localStorage.setItem('playerToken', playerToken); }
-    localStorage.setItem('playerName', n); // Save player name
+    if (!playerToken) { playerToken = generateToken(); sessionStorage.setItem('playerToken', playerToken); }
+    sessionStorage.setItem('playerName', n);
     socket.emit('joinRoom', { playerName: n, roomCode: c, playerToken });
 });
-copyCodeBtn.addEventListener('click', () => { navigator.clipboard.writeText(lobbyRoomCode.textContent).then(() => { copyCodeBtn.textContent = 'คัดลอกแล้ว!'; setTimeout(() => copyCodeBtn.textContent = 'คัดลอก', 2000); }); });
+copyCodeBtn.addEventListener('click', () => navigator.clipboard.writeText(lobbyRoomCode.textContent).then(() => { copyCodeBtn.textContent = 'คัดลอกแล้ว!'; setTimeout(() => copyCodeBtn.textContent = 'คัดลอก', 2000); }));
 startGameBtn.addEventListener('click', () => {
     const selectedThemes = Array.from(themeCheckboxes.querySelectorAll('input:checked')).map(cb => cb.dataset.theme);
-    if(selectedThemes.length === 0){
-        alert("กรุณาเลือกโหมดอย่างน้อย 1 โหมด");
-        return;
-    }
+    if(selectedThemes.length === 0) { alert("กรุณาเลือกโหมดอย่างน้อย 1 โหมด"); return; }
     socket.emit('startGame', { time: timerSelect.value, rounds: roundsSelect.value, themes: selectedThemes, voteTime: voteTimerSelect.value, bountyHuntEnabled: bountyHuntCheckbox.checked });
 });
 hostEndRoundBtn.addEventListener('click', () => socket.emit('hostEndRound'));
@@ -182,127 +162,93 @@ closeLocationsBtn.addEventListener('click', () => showModal(null));
 confirmSpyGuessBtn.addEventListener('click', () => { socket.emit('spyGuessLocation', spyLocationGuess.value); showModal(null); });
 bountyHuntBtn.addEventListener('click', () => socket.emit('spyDeclareBounty'));
 confirmBountyGuessBtn.addEventListener('click', () => {
-    const guess = { location: bountyLocationGuess.value, role: bountyRoleGuess.value };
-    socket.emit('submitBountyGuess', guess);
+    socket.emit('submitBountyGuess', { location: bountyLocationGuess.value, role: bountyRoleGuess.value });
     showModal(null);
 });
 bountyLocationGuess.addEventListener('change', () => {
     const selectedLocation = bountyLocationGuess.value;
     bountyRoleGuess.innerHTML = '<option value="">เลือกบทบาท...</option>';
-    if (!selectedLocation || !currentRoundLocationsData) {
-        bountyRoleGuess.disabled = true;
-        return;
-    }
+    if (!selectedLocation || !currentRoundLocationsData) { bountyRoleGuess.disabled = true; return; }
     const locationData = currentRoundLocationsData.find(loc => loc.name === selectedLocation);
     if (locationData) {
         locationData.roles.forEach(roleString => {
             const roleName = roleString.split('(')[0].trim();
             if (roleName !== 'สายลับ') {
                 const option = document.createElement('option');
-                option.value = roleName;
-                option.textContent = roleName;
+                option.value = roleName; option.textContent = roleName;
                 bountyRoleGuess.appendChild(option);
             }
         });
         bountyRoleGuess.disabled = false;
     }
 });
-// Auto-fill player name from localStorage
 window.addEventListener('DOMContentLoaded', () => {
-    const savedName = localStorage.getItem('playerName');
-    if (savedName) {
-        playerNameInput.value = savedName;
-    }
-});
-
-
-// --- Socket.IO Handlers ---
-socket.on('connect', () => {
-    playerToken = localStorage.getItem('playerToken');
+    const savedName = sessionStorage.getItem('playerName');
+    if (savedName) playerNameInput.value = savedName;
+    playerToken = sessionStorage.getItem('playerToken');
     if (!playerToken) {
         playerToken = generateToken();
-        localStorage.setItem('playerToken', playerToken);
+        sessionStorage.setItem('playerToken', playerToken);
     }
 });
-socket.on('roomCreated', d => { showScreen('lobby'); lobbyRoomCode.textContent = d.roomCode; localStorage.setItem('lastRoomCode', d.roomCode); });
-socket.on('joinSuccess', d => { showScreen('lobby'); lobbyRoomCode.textContent = d.roomCode; localStorage.setItem('lastRoomCode', d.roomCode); });
 
+// --- Socket.IO Handlers ---
+socket.on('roomCreated', d => { showScreen('lobby'); lobbyRoomCode.textContent = d.roomCode; });
+socket.on('joinSuccess', d => { showScreen('lobby'); lobbyRoomCode.textContent = d.roomCode; });
 socket.on('error', m => alert(m));
 
 socket.on('updatePlayerList', ({players, settings}) => {
-    const self = players.find(p => p.socketId === socket.id);
+    const self = players.find(p => p.token === playerToken);
     isHost = self ? self.isHost : false;
-
     updateScoreboard(players, playerList);
     if (settings) {
-        timerSelect.value = settings.time;
-        roundsSelect.value = settings.rounds;
-        voteTimerSelect.value = settings.voteTime;
+        timerSelect.value = settings.time; roundsSelect.value = settings.rounds; voteTimerSelect.value = settings.voteTime;
         bountyHuntCheckbox.checked = settings.bountyHuntEnabled;
-        const allThemeCheckboxes = themeCheckboxes.querySelectorAll('input[type="checkbox"]');
-        allThemeCheckboxes.forEach(cb => { cb.checked = settings.themes && settings.themes.includes(cb.dataset.theme); });
+        themeCheckboxes.querySelectorAll('input').forEach(cb => cb.checked = settings.themes?.includes(cb.dataset.theme));
     }
     gameSettings.classList.remove('hidden');
-    const settingInputs = gameSettings.querySelectorAll('select, input[type="checkbox"]');
-    settingInputs.forEach(input => input.disabled = !isHost);
-    
+    gameSettings.querySelectorAll('select, input').forEach(input => input.disabled = !isHost);
     const activePlayers = players.filter(p => !p.disconnected && !p.isSpectator).length;
-    startGameBtn.disabled = activePlayers < 3; // Minimum 3 players to start
-
+    startGameBtn.disabled = activePlayers < 3;
     if (isHost) {
         startGameBtn.classList.remove('hidden');
         lobbyMessage.textContent = activePlayers < 3 ? 'ต้องมีผู้เล่นอย่างน้อย 3 คน' : 'คุณคือหัวหน้าห้อง กดเริ่มเกมได้เลย!';
     } else {
         startGameBtn.classList.add('hidden');
-        if (self && self.isSpectator) lobbyMessage.textContent = 'คุณอยู่ในโหมดผู้ชม รอหัวหน้าห้องเริ่มเกม';
-        else lobbyMessage.textContent = 'กำลังรอหัวหน้าห้องเริ่มเกม...';
+        lobbyMessage.textContent = self?.isSpectator ? 'คุณอยู่ในโหมดผู้ชม รอหัวหน้าห้องเริ่มเกม' : 'กำลังรอหัวหน้าห้องเริ่มเกม...';
     }
 });
 socket.on('settingsUpdated', (settings) => {
      if (settings && !isHost) {
-        timerSelect.value = settings.time;
-        roundsSelect.value = settings.rounds;
-        voteTimerSelect.value = settings.voteTime;
+        timerSelect.value = settings.time; roundsSelect.value = settings.rounds; voteTimerSelect.value = settings.voteTime;
         bountyHuntCheckbox.checked = settings.bountyHuntEnabled;
-        const allThemeCheckboxes = themeCheckboxes.querySelectorAll('input[type="checkbox"]');
-        allThemeCheckboxes.forEach(cb => { cb.checked = settings.themes && settings.themes.includes(cb.dataset.theme); });
+        themeCheckboxes.querySelectorAll('input').forEach(cb => cb.checked = settings.themes?.includes(cb.dataset.theme));
     }
 });
 
 socket.on('gameStarted', (data) => {
-    showScreen('game');
-    showModal(null);
+    showScreen('game'); showModal(null); requestWakeLock();
     currentRoundLocationsData = data.allLocationsData || [];
-    currentRoundRoles = data.allPlayerRoles || null; // Store roles for spectator
-    
-    const self = data.players.find(p => p.socketId === socket.id);
+    currentRoundRoles = data.allPlayerRoles || null;
+    const self = data.players.find(p => p.token === playerToken);
     isHost = self ? self.isHost : false;
-    
     currentRoundSpan.textContent = data.round;
     totalRoundsSpan.textContent = data.totalRounds;
-    gameRoomCode.textContent = lobbyRoomCode.textContent; 
-    hostEndRoundBtn.classList.toggle('hidden', !isHost || (self && self.isSpectator));
-    setGameTheme(data.role);
-
-    roleDescDisplay.classList.add('hidden');
-    spyTargetDisplay.classList.add('hidden');
-    bountyHuntBtn.classList.add('hidden');
-    
+    gameRoomCode.textContent = lobbyRoomCode.textContent;
+    hostEndRoundBtn.classList.toggle('hidden', !isHost || self?.isSpectator);
+    ingameActions.classList.toggle('hidden', !!self?.isSpectator);
     locationDisplay.textContent = data.location;
     roleDisplay.textContent = data.role;
+    bountyHuntBtn.classList.add('hidden');
+    spyTargetDisplay.classList.add('hidden');
     
-    // Always show the locations button for non-spectators
-    ingameActions.classList.toggle('hidden', !!(self && self.isSpectator));
-
-    if (self && self.isSpectator) {
-        roleLabel.textContent = "สถานะ:"
+    if (self?.isSpectator) {
+        roleLabel.textContent = "สถานะ:";
         updateScoreboard(data.players, inGameScoreboard, currentRoundRoles);
     } else {
-        roleLabel.textContent = "บทบาท:"
-        if (data.roleDesc) {
-            roleDescDisplay.textContent = `"${data.roleDesc}"`;
-            roleDescDisplay.classList.remove('hidden');
-        }
+        roleLabel.textContent = "บทบาท:";
+        if (data.roleDesc) { roleDescDisplay.textContent = `"${data.roleDesc}"`; roleDescDisplay.classList.remove('hidden'); }
+        else roleDescDisplay.classList.add('hidden');
         if (data.role === 'สายลับ' && data.bountyTargetName) {
             spyTargetName.textContent = data.bountyTargetName;
             spyTargetDisplay.classList.remove('hidden');
@@ -310,8 +256,6 @@ socket.on('gameStarted', (data) => {
         }
         updateScoreboard(data.players, inGameScoreboard);
     }
-    
-    // Populate location list for everyone
     locationsList.innerHTML = '';
     (data.allLocations || []).forEach(locName => {
         const div = document.createElement('div');
@@ -325,19 +269,16 @@ socket.on('gameStarted', (data) => {
 socket.on('timerUpdate', ({ timeLeft, players }) => {
     timerDisplay.textContent = `${String(Math.floor(timeLeft/60)).padStart(2,'0')}:${String(timeLeft%60).padStart(2,'0')}`;
     if (screens.game.offsetParent !== null) {
-        const self = players.find(p => p.socketId === socket.id);
-        const rolesToShow = (self && self.isSpectator) ? currentRoundRoles : null;
-        updateScoreboard(players, inGameScoreboard, rolesToShow);
+        const self = players.find(p => p.token === playerToken);
+        updateScoreboard(players, inGameScoreboard, self?.isSpectator ? currentRoundRoles : null);
     }
 });
 socket.on('startVote', ({ players, reason, voteTime }) => {
     showModal('voting');
     voteReason.textContent = reason;
     votePlayerButtons.innerHTML = '';
-    const self = players.find(p => p.socketId === socket.id);
-
     players.forEach(player => {
-        if (player.socketId !== socket.id) { // Cannot vote for yourself
+        if (player.token !== playerToken) {
             const button = document.createElement('button');
             button.textContent = player.name;
             button.className = 'btn btn-primary vote-btn w-full mb-2';
@@ -346,80 +287,65 @@ socket.on('startVote', ({ players, reason, voteTime }) => {
         }
     });
     abstainVoteBtn.disabled = false;
-    let voteTimeLeft = voteTime || 120;
+    let timeLeft = voteTime || 120;
     if (voteTimerInterval) clearInterval(voteTimerInterval);
-    voteTimerDisplay.textContent = voteTimeLeft;
+    voteTimerDisplay.textContent = timeLeft;
     voteTimerInterval = setInterval(() => {
-        voteTimeLeft--;
-        if (voteTimeLeft >= 0) voteTimerDisplay.textContent = voteTimeLeft;
+        timeLeft--;
+        if (timeLeft >= 0) voteTimerDisplay.textContent = timeLeft;
         else clearInterval(voteTimerInterval);
     }, 1000);
 });
 socket.on('spyGuessPhase', ({ locations, taunt, duration }) => {
     showModal('spyGuess');
     spyLocationGuess.innerHTML = '';
-    locations.forEach(loc => { const o = document.createElement('option'); o.value = loc; o.textContent = loc; spyLocationGuess.appendChild(o); });
+    locations.forEach(loc => { const o=document.createElement('option'); o.value=loc; o.textContent=loc; spyLocationGuess.appendChild(o); });
     spyGuessTaunt.textContent = taunt || "";
     let timeLeft = duration;
     if(specialTimerInterval) clearInterval(specialTimerInterval);
     spyGuessTimer.textContent = timeLeft;
-    specialTimerInterval = setInterval(() => {
-        timeLeft--;
-        if(timeLeft >= 0) spyGuessTimer.textContent = timeLeft;
-        else clearInterval(specialTimerInterval);
-    }, 1000);
+    specialTimerInterval = setInterval(() => { if(--timeLeft >= 0) spyGuessTimer.textContent = timeLeft; else clearInterval(specialTimerInterval); }, 1000);
 });
 socket.on('spyIsGuessing', ({ spyName, taunt }) => {
     showModal('waitingForSpy');
     waitingSpyName.textContent = spyName;
-    spyGuessTaunt.textContent = taunt || ""; // Use the same element for consistency
+    waitingTaunt.textContent = taunt || "";
 });
 socket.on('bountyHuntPhase', ({ locations, targetName, duration }) => {
     showModal('bountyHunt');
     bountyLocationGuess.innerHTML = '<option value="">เลือกสถานที่...</option>';
-    locations.forEach(loc => { const o = document.createElement('option'); o.value = loc; o.textContent = loc; bountyLocationGuess.appendChild(o); });
+    locations.forEach(loc => { const o=document.createElement('option'); o.value=loc; o.textContent=loc; bountyLocationGuess.appendChild(o); });
     bountyRoleGuess.innerHTML = '<option value="">กรุณาเลือกสถานที่ก่อน</option>';
     bountyRoleGuess.disabled = true;
     bountyTargetName.textContent = targetName;
     let timeLeft = duration;
     if(specialTimerInterval) clearInterval(specialTimerInterval);
     bountyHuntTimer.textContent = timeLeft;
-    specialTimerInterval = setInterval(() => {
-        timeLeft--;
-        if(timeLeft >= 0) bountyHuntTimer.textContent = timeLeft;
-        else clearInterval(specialTimerInterval);
-    }, 1000);
+    specialTimerInterval = setInterval(() => { if(--timeLeft >= 0) bountyHuntTimer.textContent = timeLeft; else clearInterval(specialTimerInterval); }, 1000);
 });
-socket.on('waitingForBountyHunt', ({spyName}) => {
-    showModal('waitingForBounty');
-    waitingBountySpyName.textContent = spyName;
-});
+socket.on('waitingForBountyHunt', ({spyName}) => { showModal('waitingForBounty'); waitingBountySpyName.textContent = spyName; });
 socket.on('roundOver', ({ location, spyName, resultText, isFinalRound, players }) => {
-    showModal('endRound'); 
-    endLocation.textContent = location; 
+    showModal('endRound');
+    endLocation.textContent = location;
     endSpy.textContent = spyName;
-    let resultMessage = resultText;
-    const self = players.find(p => p.socketId === socket.id);
-    
+    const self = players.find(p => p.token === playerToken);
     if (isFinalRound) {
+        releaseWakeLock();
         endModalTitle.textContent = "จบเกม!";
-        const winner = [...players].filter(p=>!p.isSpectator).sort((a,b) => b.score - a.score)[0];
-        if(winner) resultMessage += `\n\n🏆 ผู้ชนะคือ ${winner.name} ด้วยคะแนน ${winner.score} คะแนน!`;
-        else resultMessage += `\n\nจบเกมแล้ว!`;
+        const winner = [...players].filter(p=>!p.isSpectator).sort((a,b)=>b.score - a.score)[0];
+        resultText += winner ? `\n\n🏆 ผู้ชนะคือ ${winner.name} ด้วยคะแนน ${winner.score} คะแนน!` : `\n\nจบเกมแล้ว!`;
         nextRoundBtn.classList.add('hidden');
         backToLobbyBtn.classList.toggle('hidden', !(self && self.isHost));
-        localStorage.removeItem('lastRoomCode');
     } else {
         endModalTitle.textContent = "จบรอบ";
-        nextRoundBtn.classList.toggle('hidden', !(self && self.isHost) || (self && self.isSpectator));
+        nextRoundBtn.classList.toggle('hidden', !(self && self.isHost) || self?.isSpectator);
         backToLobbyBtn.classList.add('hidden');
     }
-    roundResultText.textContent = resultMessage;
-    // No need to call updateScoreboard here, it's just showing results
+    roundResultText.textContent = resultText;
 });
-socket.on('returnToLobby', () => { showScreen('lobby'); showModal(null); localStorage.removeItem('lastRoomCode'); });
-socket.on('kicked', () => { alert('คุณถูกเตะออกจากห้อง'); localStorage.removeItem('lastRoomCode'); window.location.reload(); });
-socket.on('playerDisconnected', name => { lobbyMessage.textContent = `${name} หลุดออกจากเกม...`; });
-socket.on('playerReconnected', name => { lobbyMessage.textContent = `${name} กลับเข้าสู่เกม!`; });
-socket.on('newHost', name => { lobbyMessage.textContent = `${name} ได้เป็นหัวหน้าห้องคนใหม่`; });
+socket.on('returnToLobby', () => { showScreen('lobby'); showModal(null); releaseWakeLock(); });
+socket.on('kicked', () => { alert('คุณถูกเตะออกจากห้อง'); releaseWakeLock(); window.location.reload(); });
+socket.on('playerDisconnected', name => lobbyMessage.textContent = `${name} หลุดออกจากเกม...`);
+socket.on('playerReconnected', name => lobbyMessage.textContent = `${name} กลับเข้าสู่เกม!`);
+socket.on('newHost', name => lobbyMessage.textContent = `${name} ได้เป็นหัวหน้าห้องคนใหม่`);
 

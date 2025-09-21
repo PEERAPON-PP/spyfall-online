@@ -167,24 +167,40 @@ async function startNewRound(roomCode, games, io) {
     game.timer = setTimeout(() => gameLoop(roomCode, games, io), 1000);
 }
 
+function submitVote(roomCode, socketId, votedPlayerId, games, io) {
+    const game = games[roomCode];
+    if (!game || !['voting', 'revoting'].includes(game.state)) return;
+    const player = game.players.find(p => p.socketId === socketId);
+    if (player && !player.isSpectator) {
+        game.votes[socketId] = votedPlayerId;
+        const playersWhoCanVote = game.players.filter(p => !p.disconnected && !p.isSpectator);
+        const voterIds = Object.keys(game.votes).map(sId => game.players.find(p => p.socketId === sId)?.id).filter(id => id);
+        io.to(roomCode).emit('voteUpdate', { voters: voterIds, totalVoters: playersWhoCanVote.length });
+        if (Object.keys(game.votes).length >= playersWhoCanVote.length) {
+            clearTimeout(game.voteTimer); // Clear the timer immediately
+            calculateVoteResults(roomCode, games, io);
+        }
+    }
+}
+
 function endRound(roomCode, reason, games, io) {
     const game = games[roomCode];
     if (!game || game.state !== 'playing') return;
     clearTimers(game);
     game.state = 'voting';
-    game.resultsCalculated = false; // Reset the lock
+    game.resultsCalculated = false;
     const voteReason = reason === 'timer_end' ? 'หมดเวลา! โหวตหาตัวสายลับ' : 'หัวหน้าห้องสั่งจบรอบ!';
     const activePlayers = game.players.filter(p => !p.disconnected && !p.isSpectator);
     const voteTime = game.settings.voteTime;
     io.to(roomCode).emit('startVote', { players: activePlayers, reason: voteReason, voteTime });
     game.voteTimer = setTimeout(() => calculateVoteResults(roomCode, games, io), voteTime * 1000);
-    if (game.isBotGame) botManager.runBotVote(roomCode, io, games);
+    if (game.isBotGame) botManager.runBotVote(roomCode, io, games, submitVote);
 }
 
 function calculateVoteResults(roomCode, games, io) {
     const game = games[roomCode];
     if (!game || !['voting', 'revoting'].includes(game.state) || game.resultsCalculated) return;
-    game.resultsCalculated = true; // Set the lock
+    game.resultsCalculated = true;
     const spyId = game.spy.id;
     const voteCounts = {};
     Object.values(game.votes).forEach(votedId => { if (votedId) voteCounts[votedId] = (voteCounts[votedId] || 0) + 1; });
@@ -232,22 +248,6 @@ function endGamePhase(roomCode, resultText, games, io) {
     clearTimers(game);
     game.state = 'post-round';
     io.to(roomCode).emit('roundOver', { location: game.currentLocation, spyName: game.spy ? game.spy.name : 'ไม่มี', resultText, isFinalRound: game.currentRound >= game.settings.rounds, players: game.players });
-}
-
-function submitVote(roomCode, socketId, votedPlayerId, games, io) {
-    const game = games[roomCode];
-    if (!game || !['voting', 'revoting'].includes(game.state)) return;
-    const player = game.players.find(p => p.socketId === socketId);
-    if (player && !player.isSpectator) {
-        game.votes[socketId] = votedPlayerId;
-        const playersWhoCanVote = game.players.filter(p => !p.disconnected && !p.isSpectator);
-        const voterIds = Object.keys(game.votes).map(sId => game.players.find(p => p.socketId === sId)?.id).filter(id => id);
-        io.to(roomCode).emit('voteUpdate', { voters: voterIds, totalVoters: playersWhoCanVote.length });
-        if (Object.keys(game.votes).length >= playersWhoCanVote.length) {
-            clearTimers(game);
-            calculateVoteResults(roomCode, games, io);
-        }
-    }
 }
 
 function spyGuessLocation(roomCode, socketId, guessedLocation, games, io) {

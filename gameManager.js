@@ -10,7 +10,6 @@ try {
         const fileContent = fs.readFileSync(filePath, 'utf8');
         allLocations = allLocations.concat(JSON.parse(fileContent));
     }
-    // เรียงลำดับสถานที่ทั้งหมดตามตัวอักษรไทย ก-ฮ ตั้งแต่แรก
     allLocations.sort((a, b) => a.name.localeCompare(b.name, 'th'));
     console.log(`Loaded ${allLocations.length} locations from ${locationFiles.length} files.`);
 } catch (error) {
@@ -38,7 +37,8 @@ function generateRoomCode(games) {
 }
 
 function clearTimers(game) {
-    if (game.timer) clearTimeout(game.timer);
+    // FIX: Use clearInterval for the main game timer
+    if (game.timer) clearInterval(game.timer);
     if (game.voteTimer) clearTimeout(game.voteTimer);
     if (game.specialTimer) clearTimeout(game.specialTimer);
     game.timer = null;
@@ -67,19 +67,24 @@ function startGame(roomCode, settings, games, io) {
     startNewRound(roomCode, games, io);
 }
 
+// FIX: This function is now the callback for setInterval
 function gameLoop(roomCode, games, io) {
     const game = games[roomCode];
-    if (!game || game.state !== 'playing') return;
+    // If game state changes, the interval will stop processing
+    if (!game || game.state !== 'playing') {
+        if (game && game.timer) {
+            clearInterval(game.timer);
+            game.timer = null;
+        }
+        return;
+    }
     
-    // FIX: เปลี่ยนจากการนับถอยหลังมาใช้เวลาจริงเพื่อความแม่นยำ
     const timeLeft = Math.max(0, Math.round((game.roundEndTime - Date.now()) / 1000));
-    
     io.to(roomCode).emit('timerUpdate', { timeLeft: timeLeft, players: game.players });
     
     if (timeLeft <= 0) {
+        // endRound calls clearTimers, which will stop this interval
         endRound(roomCode, "timer_end", games, io);
-    } else {
-        game.timer = setTimeout(() => gameLoop(roomCode, games, io), 1000);
     }
 }
 
@@ -93,9 +98,8 @@ function startNewRound(roomCode, games, io) {
     game.revoteCandidates = [];
     game.spy = null;
     game.bountyTarget = null;
-    game.roundLocationList = []; // Reset the list for the new round
+    game.roundLocationList = [];
     
-    // FIX: ลบการกำหนดบทบาทของผู้เล่นที่รอ เพื่อให้สถานะผู้ชมคงเดิมระหว่างรอบ
     game.players.forEach(p => { 
         delete p.role;
     });
@@ -160,7 +164,7 @@ function startNewRound(roomCode, games, io) {
     
     let roundList = otherLocations.slice(0, sliceCount);
     roundList.push(game.currentLocation);
-    roundList.sort((a, b) => a.localeCompare(b, 'th')); // เรียง ก-ฮ
+    roundList.sort((a, b) => a.localeCompare(b, 'th'));
     game.roundLocationList = roundList;
 
     game.players.forEach(player => {
@@ -200,10 +204,10 @@ function startNewRound(roomCode, games, io) {
         }
     });
 
-    // FIX: ตั้งค่าเวลาสิ้นสุดของรอบแทนการนับถอยหลัง
     game.roundEndTime = Date.now() + (game.settings.time * 1000);
     io.to(roomCode).emit('timerUpdate', { timeLeft: game.settings.time, players: game.players });
-    game.timer = setTimeout(() => gameLoop(roomCode, games, io), 1000);
+    // FIX: Use setInterval for a more stable timer loop
+    game.timer = setInterval(() => gameLoop(roomCode, games, io), 1000);
 }
 
 function endRound(roomCode, reason, games, io) {

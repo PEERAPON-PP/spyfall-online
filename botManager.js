@@ -28,7 +28,7 @@ async function createBotGame(humanPlayerSocket, io, games) {
     io.to(roomCode).emit('updatePlayerList', { players: game.players, settings: game.settings });
 }
 
-async function runBotVote(roomCode, io, games, submitVote) {
+async function runBotVote(roomCode, io, games, submitVoteFn) {
     const game = games[roomCode];
     if (!game || !game.isBotGame || game.state !== 'voting') return;
     const bots = game.players.filter(p => p.isBot && !p.isSpectator);
@@ -46,10 +46,10 @@ async function runBotVote(roomCode, io, games, submitVote) {
             const votedName = response.text().trim();
             const targetPlayer = potentialTargets.find(p => p.name === votedName);
             await new Promise(resolve => setTimeout(resolve, Math.random() * 1000 + 500));
-            submitVote(roomCode, bot.socketId, targetPlayer ? targetPlayer.id : null, games, io);
+            submitVoteFn(roomCode, bot.socketId, targetPlayer ? targetPlayer.id : null, games, io);
         } catch (error) {
             console.error(`Error for ${bot.name}:`, error);
-            submitVote(roomCode, bot.socketId, null, games, io);
+            submitVoteFn(roomCode, bot.socketId, null, games, io);
         }
     }
 }

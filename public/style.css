@@ -27,31 +27,35 @@ body { font-family: 'IBM Plex Sans Thai', sans-serif; touch-action: manipulation
 /* --- UI Color Theming for Modals & Text --- */
 
 /* Spy Theme (Red) */
-#spy-guess-modal .card, 
-#bounty-hunt-modal .card {
+#spy-guess-modal .card,
+#waiting-for-spy-modal .card {
     border: 2px solid #ef4444;
 }
-#spy-guess-modal h3, 
-#bounty-hunt-modal h3 {
+#spy-guess-modal h3,
+#waiting-for-spy-modal h3 {
     color: #ef4444;
 }
+#bounty-hunt-modal .card {
+    border: 2px solid #f59e0b; /* Yellow for Bounty Hunt */
+}
+#bounty-hunt-modal h3, #waiting-for-bounty-modal h3 {
+    color: #f59e0b;
+}
+
 #end-spy {
     color: #ef4444;
-    font-weight: 600;
+    font-weight: 700;
 }
 
 /* Player Theme (Blue) */
-#voting-modal .card, 
-#waiting-for-spy-modal .card,
-#waiting-for-bounty-modal .card {
+#voting-modal .card {
      border: 2px solid #4f46e5;
 }
-#voting-modal h3, 
-#waiting-for-spy-modal h3,
-#waiting-for-bounty-modal h3 {
+#voting-modal h3 {
     color: #4f46e5;
 }
 #end-location {
     color: #4f46e5;
-    font-weight: 600;
+    font-weight: 700;
 }
+

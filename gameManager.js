@@ -91,11 +91,8 @@ function startNewRound(roomCode, games, io) {
     game.bountyTarget = null;
     game.roundLocationList = []; // Reset the list for the new round
     
-    // FIX: เปลี่ยนสถานะผู้ชมที่รอเล่นให้เป็นผู้เล่นก่อนเริ่มรอบใหม่
+    // FIX: ลบการกำหนดบทบาทของผู้เล่นที่รอ เพื่อให้สถานะผู้ชมคงเดิมระหว่างรอบ
     game.players.forEach(p => { 
-        if (p.isSpectator === 'waiting') {
-            p.isSpectator = false;
-        }
         delete p.role;
     });
 
@@ -139,7 +136,6 @@ function startNewRound(roomCode, games, io) {
         return { id: p.id, role: name };
     });
     
-    // FIX: สร้างรายชื่อสถานที่ชุดเดียวสำหรับทุกคน และเรียงลำดับ
     let listSize;
     const selectedThemes = game.settings.themes;
     const themeCount = selectedThemes.length;
@@ -179,7 +175,7 @@ function startNewRound(roomCode, games, io) {
                 payload.location = game.currentLocation;
                 payload.allPlayerRoles = allPlayerRoles;
                 payload.role = "ผู้ชม";
-                payload.allLocations = []; // ผู้ชมไม่จำเป็นต้องเห็นลิสต์
+                payload.allLocations = [];
             } else if (player.role) {
                 const { name: roleName, description: roleDesc } = parseRole(player.role);
                 const isSpy = roleName === 'สายลับ';
@@ -188,7 +184,6 @@ function startNewRound(roomCode, games, io) {
                 payload.roleDesc = roleDesc;
                 payload.location = isSpy ? 'ไม่ทราบ' : game.currentLocation;
                 
-                // FIX: ใช้รายชื่อสถานที่ชุดเดียวกันสำหรับทุกคน
                 payload.allLocations = game.roundLocationList;
 
                 if (isSpy && game.bountyTarget) {
@@ -455,3 +450,4 @@ module.exports = {
     sendGameStateToSpectator,
     clearTimers
 };
+

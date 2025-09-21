@@ -80,7 +80,7 @@ function startGame(roomCode, settings, games, io) {
         themes: settings.themes || ['default'],
         voteTime: parseInt(settings.voteTime) || 30,
         bountyHuntEnabled: settings.bountyHuntEnabled || false,
-        useGemini: !!genAI && game.isBotGame // Only use Gemini in bot games
+        useGemini: !!genAI && game.isBotGame
     };
     game.locationDeck = createBalancedDeck(game.settings.themes);
     game.currentRound = 0;
@@ -102,7 +102,7 @@ async function startNewRound(roomCode, games, io) {
     clearTimers(game);
     game.state = 'playing';
     game.currentRound++;
-    game.votes = {}; game.spy = null; game.spyLocationList = [];
+    game.votes = {}; game.spy = null; game.spyLocationList = []; game.bountyTarget = null;
     game.players.forEach(p => { if (p.isSpectator === 'waiting') p.isSpectator = false; delete p.role; });
     if (!game.locationDeck?.length) game.locationDeck = createBalancedDeck(game.settings.themes);
     if (!game.locationDeck?.length) { io.to(roomCode).emit('error', 'ไม่พบสถานที่สำหรับโหมดที่เลือก'); return; }
@@ -115,6 +115,7 @@ async function startNewRound(roomCode, games, io) {
     const spyIndex = Math.floor(Math.random() * activePlayers.length);
     let roles = [...location.roles]; shuffleArray(roles);
     activePlayers.forEach((player, index) => { player.role = (index === spyIndex) ? 'สายลับ' : (roles.pop() || "พลเมืองดี"); if (player.role === 'สายลับ') game.spy = player; });
+    if (game.settings.bountyHuntEnabled && game.spy && activePlayers.length > 1) { const targets = activePlayers.filter(p=>p.id !== game.spy.id); if(targets.length > 0) game.bountyTarget = targets[Math.floor(Math.random() * targets.length)]; }
     const allPlayerRoles = activePlayers.map(p => ({ id: p.id, role: parseRole(p.role).name }));
     const themeCount = game.settings.themes.length;
     let spyListSize = themeCount >= 3 ? 22 : (themeCount === 2 ? 18 : (game.settings.themes.includes('default') ? 14 : 12));
@@ -129,7 +130,7 @@ async function startNewRound(roomCode, games, io) {
         if (socket) {
             const payload = { round: game.currentRound, totalRounds: game.settings.rounds, players: game.players, isSpectator: player.isSpectator, allPlayerRoles, allLocations: game.spyLocationList, canBountyHunt: game.settings.bountyHuntEnabled };
             if (player.isSpectator) { payload.location = game.currentLocation; payload.role = "ผู้ชม"; }
-            else if (player.role) { const { name: roleName, description: roleDesc } = parseRole(player.role); payload.role = roleName; payload.roleDesc = roleDesc; payload.location = roleName === 'สายลับ' ? 'ไม่ทราบ' : game.currentLocation; }
+            else if (player.role) { const { name: roleName, description: roleDesc } = parseRole(player.role); payload.role = roleName; payload.roleDesc = roleDesc; payload.location = roleName === 'สายลับ' ? 'ไม่ทราบ' : game.currentLocation; if(roleName === 'สายลับ' && game.bountyTarget) payload.bountyTargetName = game.bountyTarget.name; }
             else return;
             socket.emit('gameStarted', payload);
         }
@@ -208,6 +209,7 @@ function endGamePhase(roomCode, resultText, games, io) {
 function spyGuessLocation(roomCode, socketId, guessedLocation, games, io) {
     const game = games[roomCode];
     if (!game || game.state !== 'spy-guessing' || !game.spy || socketId !== game.spy.socketId) return;
+    clearTimers(game); // Ensure timer stops immediately
     let resultText = guessedLocation === game.currentLocation ? (game.spy.score++, `สายลับหนีรอด และตอบสถานที่ถูกต้อง!\nสายลับได้รับเพิ่มอีก 1 คะแนน! (รวมเป็น 2)`) : `สายลับหนีรอด! แต่ตอบสถานที่ผิด\nสายลับได้รับ 1 คะแนน`;
     endGamePhase(roomCode, resultText, games, io);
 }

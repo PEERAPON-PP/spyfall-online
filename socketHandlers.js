@@ -30,7 +30,7 @@ function initializeSocketHandlers(io) {
                 state: 'lobby', 
                 settings: { time: 300, rounds: 5, themes: ['default'], voteTime: 120, bountyHuntEnabled: false }, 
                 currentRound: 0, 
-                locationDeck: [] // Using locationDeck instead of usedLocations
+                usedLocations: [] // --- MODIFICATION: Was 'locationDeck' ---
             };
             const player = { id: uuidv4(), socketId: socket.id, name: playerName, isHost: true, score: 0, token: playerToken, isSpectator: false, disconnected: false };
             games[roomCode].players.push(player);
@@ -129,13 +129,11 @@ function initializeSocketHandlers(io) {
                 if (game.isStartingNextRound) return;
                 game.isStartingNextRound = true;
 
-                gameManager.startNewRound(socket.roomCode, games, io)
-                    .finally(() => {
-                        // Ensure the flag is always reset, even if an error occurs
-                        if (games[socket.roomCode]) {
-                           games[socket.roomCode].isStartingNextRound = false;
-                        }
-                    });
+                // --- MODIFICATION: Fixed invalid '.finally()' call ---
+                gameManager.startNewRound(socket.roomCode, games, io);
+                if (games[socket.roomCode]) {
+                   games[socket.roomCode].isStartingNextRound = false;
+                }
             }
         });
 
@@ -144,7 +142,7 @@ function initializeSocketHandlers(io) {
             if (game && player && player.isHost) {
                 game.state = 'lobby';
                 game.currentRound = 0;
-                game.locationDeck = []; // Reset the deck
+                game.usedLocations = []; // --- MODIFICATION: Was 'locationDeck' ---
                 game.players.forEach(p => p.score = 0);
                 gameManager.clearTimers(game);
                 io.to(socket.roomCode).emit('returnToLobby');

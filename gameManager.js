@@ -69,41 +69,39 @@ function getAvailableLocations(themes) {
     return allLocations.filter(loc => themes.includes(loc.category));
 }
 
-// New helper function to create a balanced location deck
+// --- NEW BALANCED DECK LOGIC ---
 function createBalancedDeck(themes) {
-    const availableLocations = getAvailableLocations(themes);
-    if (!themes || themes.length <= 1) {
-        shuffleArray(availableLocations);
-        return availableLocations;
+    if (!themes || themes.length === 0) {
+        return [];
     }
 
     const locationsByCategory = {};
     themes.forEach(theme => {
-        locationsByCategory[theme] = [];
-    });
-    availableLocations.forEach(location => {
-        if (locationsByCategory[location.category]) {
-            locationsByCategory[location.category].push(location);
-        }
+        locationsByCategory[theme] = allLocations.filter(loc => loc.category === theme);
+        shuffleArray(locationsByCategory[theme]);
     });
 
-    Object.values(locationsByCategory).forEach(list => shuffleArray(list));
-
-    const balancedDeck = [];
-    const categoryLists = Object.values(locationsByCategory).filter(list => list.length > 0);
-    let maxLength = 0;
-    categoryLists.forEach(list => {
-        if (list.length > maxLength) maxLength = list.length;
-    });
-
-    for (let i = 0; i < maxLength; i++) {
-        for (const list of categoryLists) {
-            if (i < list.length) {
-                balancedDeck.push(list[i]);
+    const deck = [];
+    if (themes.length > 1) {
+        // Find the smallest category size
+        let minSize = Infinity;
+        themes.forEach(theme => {
+            if (locationsByCategory[theme].length < minSize) {
+                minSize = locationsByCategory[theme].length;
             }
-        }
+        });
+
+        // Take an equal number of locations from each category
+        themes.forEach(theme => {
+            deck.push(...locationsByCategory[theme].slice(0, minSize));
+        });
+    } else {
+        // If only one theme, just use all its locations
+        deck.push(...locationsByCategory[themes[0]]);
     }
-    return balancedDeck;
+
+    shuffleArray(deck);
+    return deck;
 }
 
 
@@ -138,7 +136,7 @@ function startGame(roomCode, settings, games, io) {
     };
 
     game.locationDeck = createBalancedDeck(game.settings.themes);
-
+    game.currentRound = 0; // Explicitly reset round count
     startNewRound(roomCode, games, io);
 }
 
@@ -157,6 +155,13 @@ function gameLoop(roomCode, games, io) {
 async function startNewRound(roomCode, games, io) {
     const game = games[roomCode];
     if (!game) return;
+
+    // --- FIX FOR ROUND REFRESH BUG ---
+    if (game.currentRound >= game.settings.rounds && game.state === 'post-round') {
+        console.log(`Game in room ${roomCode} has ended. Preventing new round from starting.`);
+        return;
+    }
+
     clearTimers(game);
     game.state = 'playing';
     game.currentRound++;
@@ -241,12 +246,10 @@ async function startNewRound(roomCode, games, io) {
 
     let spyList;
     if (game.settings.useGemini) {
-        console.log("Attempting to generate spy list with Gemini...");
         spyList = await getSpyListFromGemini(game.currentLocation, allThemeLocationNames, spyListSize);
     }
 
     if (!spyList) {
-        console.log("Gemini failed or is disabled, falling back to random generation.");
         const sliceCount = spyListSize - 1;
         let otherLocations = allThemeLocationNames.filter(name => name !== game.currentLocation);
         shuffleArray(otherLocations);
@@ -266,14 +269,15 @@ async function startNewRound(roomCode, games, io) {
                 isHost: player.isHost,
                 players: game.players,
                 isSpectator: player.isSpectator,
-                allLocationsData: availableLocationsForSpyList
+                allLocationsData: availableLocationsForSpyList,
+                // --- FIX FOR VILLAGER/SPECTATOR VISIBILITY ---
+                allPlayerRoles: allPlayerRoles, // Always send roles
+                allLocations: game.spyLocationList // Always send the same list
             };
 
             if (player.isSpectator) {
                 payload.location = game.currentLocation;
-                payload.allPlayerRoles = allPlayerRoles;
                 payload.role = "ผู้ชม";
-                payload.allLocations = [];
             } else if (player.role) {
                 const { name: roleName, description: roleDesc } = parseRole(player.role);
                 const isSpy = roleName === 'สายลับ';
@@ -281,7 +285,6 @@ async function startNewRound(roomCode, games, io) {
                 payload.role = roleName;
                 payload.roleDesc = roleDesc;
                 payload.location = isSpy ? 'ไม่ทราบ' : game.currentLocation;
-                payload.allLocations = isSpy ? game.spyLocationList : allThemeLocationNames;
 
                 if (isSpy && game.bountyTarget) {
                     payload.bountyTargetName = game.bountyTarget.name;
@@ -515,7 +518,7 @@ function resolveBountyHunt(roomCode, guess, games, io) {
 function sendGameStateToSpectator(game, player, io) {
     const socket = io.sockets.sockets.get(player.socketId);
     if (!socket) return;
-
+    
     const activePlayers = game.players.filter(p => !p.disconnected && !p.isSpectator);
     const allPlayerRoles = activePlayers.map(p => {
         const { name } = parseRole(p.role);
@@ -523,14 +526,16 @@ function sendGameStateToSpectator(game, player, io) {
     });
 
     socket.emit('gameStarted', {
-        location: game.currentLocation,
         round: game.currentRound,
         totalRounds: game.settings.rounds,
         isHost: player.isHost,
         players: game.players,
         isSpectator: true,
-        allPlayerRoles,
-        allLocationsData: getAvailableLocations(game.settings.themes)
+        allLocationsData: getAvailableLocations(game.settings.themes),
+        allPlayerRoles: allPlayerRoles,
+        allLocations: game.spyLocationList,
+        location: game.currentLocation,
+        role: "ผู้ชม",
     });
 }
 

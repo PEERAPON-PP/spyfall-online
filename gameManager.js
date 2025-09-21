@@ -47,7 +47,7 @@ function clearTimers(game) {
 function startGame(roomCode, settings, games, io) {
     const game = games[roomCode];
     if (!game) return;
-    // --- START: MODIFICATION ---
+    
     const activePlayers = game.players.filter(p => !p.disconnected && !p.isSpectator);
     if (activePlayers.length < 3) {
         const host = game.players.find(p => p.isHost);
@@ -59,7 +59,6 @@ function startGame(roomCode, settings, games, io) {
         }
         return; 
     }
-    // --- END: MODIFICATION ---
     
     const { time, rounds, themes, voteTime, bountyHuntEnabled } = settings;
     game.settings = { time: parseInt(time), rounds: parseInt(rounds), themes: themes || ['default'], voteTime: parseInt(voteTime) || 120, bountyHuntEnabled: bountyHuntEnabled };
@@ -100,11 +99,8 @@ function startNewRound(roomCode, games, io) {
         io.to(roomCode).emit('error', 'ไม่พบสถานที่สำหรับโหมดที่เลือก');
         return;
     }
-
-    if (!game.usedLocations) {
-        game.usedLocations = [];
-    }
-
+    
+    // --- MODIFICATION: Removed redundant check for game.usedLocations ---
     let locationPool = availableLocations.filter(loc => !game.usedLocations.includes(loc.name));
     if (locationPool.length === 0) { game.usedLocations = []; locationPool = availableLocations; }
     

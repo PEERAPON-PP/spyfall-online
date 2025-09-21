@@ -1,9 +1,8 @@
 const fs = require('fs');
 const path = require('path');
 const { GoogleGenerativeAI } = require("@google/generative-ai");
-const botManager = require('./botManager'); // เพิ่มการ import
+const botManager = require('./botManager');
 
-// --- Gemini AI Setup ---
 let genAI;
 if (process.env.GEMINI_API_KEY) {
     genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
@@ -21,10 +20,8 @@ try {
         const fileContent = fs.readFileSync(filePath, 'utf8');
         allLocations = allLocations.concat(JSON.parse(fileContent));
     }
-    console.log(`Loaded ${allLocations.length} locations from ${locationFiles.length} files.`);
 } catch (error) {
     console.error("Could not load location files:", error);
-    allLocations = [];
 }
 
 const TAUNTS = ["ว้าย! โหวตผิดเพราะไม่สวยอะดิ", "เอิ้ก ๆ ๆ ๆ", "ชัดขนาดนี้!", "มองยังไงเนี่ย?", "ไปพักผ่อนบ้างนะ"];
@@ -39,7 +36,6 @@ async function getSpyListFromGemini(correctLocation, allPossibleLocations, count
         const jsonString = response.text().replace(/```json|```/g, '').trim();
         const parsed = JSON.parse(jsonString);
         if (parsed.locations && Array.isArray(parsed.locations) && parsed.locations.length === count) {
-            console.log("Successfully generated spy list with Gemini.");
             return parsed.locations;
         }
     } catch (error) { console.error("Error calling Gemini API:", error); }
@@ -114,60 +110,39 @@ function gameLoop(roomCode, games, io) {
 async function startNewRound(roomCode, games, io) {
     const game = games[roomCode];
     if (!game || (game.currentRound >= game.settings.rounds && game.state === 'post-round')) return;
-
     clearTimers(game);
     game.state = 'playing';
     game.currentRound++;
     game.votes = {};
-    game.revoteCandidates = [];
     game.spy = null;
-    game.bountyTarget = null;
     game.spyLocationList = [];
-    
     game.players.forEach(p => { if (p.isSpectator === 'waiting') p.isSpectator = false; delete p.role; });
-
     if (!game.locationDeck || game.locationDeck.length === 0) {
         game.locationDeck = createBalancedDeck(game.settings.themes);
         if(game.locationDeck.length === 0) { io.to(roomCode).emit('error', 'ไม่พบสถานที่สำหรับโหมดที่เลือก'); return; }
     }
-
     const location = game.locationDeck.pop();
     if (!location) { io.to(roomCode).emit('error', 'เกิดข้อผิดพลาด: ไม่สามารถเลือกสถานที่ได้'); return; }
     game.currentLocation = location.name;
     game.currentRoles = location.roles;
-    
     const activePlayers = game.players.filter(p => !p.disconnected && !p.isSpectator);
     if (activePlayers.length === 0) return;
-    
     shuffleArray(activePlayers);
     const spyIndex = Math.floor(Math.random() * activePlayers.length);
     let roles = [...location.roles];
     shuffleArray(roles);
-    
     activePlayers.forEach((player, index) => {
-        const fullRoleString = (index === spyIndex) ? 'สายลับ' : (roles.pop() || "พลเมืองดี");
-        player.role = fullRoleString;
+        player.role = (index === spyIndex) ? 'สายลับ' : (roles.pop() || "พลเมืองดี");
         if (player.role === 'สายลับ') game.spy = player;
     });
-
-    if (game.settings.bountyHuntEnabled && game.spy && activePlayers.length > 1) {
-        const potentialTargets = activePlayers.filter(p => p.id !== game.spy.id);
-        if (potentialTargets.length > 0) game.bountyTarget = potentialTargets[Math.floor(Math.random() * potentialTargets.length)];
-    }
-
     const allPlayerRoles = activePlayers.map(p => ({ id: p.id, role: parseRole(p.role).name }));
-    
     let spyListSize;
     const themeCount = game.settings.themes.length;
     if (themeCount >= 3) spyListSize = 22;
     else if (themeCount === 2) spyListSize = 18;
-    else if (themeCount === 1) spyListSize = game.settings.themes.includes('default') ? 14 : 12;
-    else spyListSize = 20;
-    
-    const availableLocationsForSpyList = getAvailableLocations(game.settings.themes);
-    const allThemeLocationNames = availableLocationsForSpyList.map(l => l.name);
+    else spyListSize = game.settings.themes.includes('default') ? 14 : 12;
+    const allThemeLocationNames = getAvailableLocations(game.settings.themes).map(l => l.name);
     if (spyListSize > allThemeLocationNames.length) spyListSize = allThemeLocationNames.length;
-
     let spyList = game.settings.useGemini ? await getSpyListFromGemini(game.currentLocation, allThemeLocationNames, spyListSize) : null;
     if (!spyList) {
         let otherLocations = allThemeLocationNames.filter(name => name !== game.currentLocation);
@@ -177,24 +152,13 @@ async function startNewRound(roomCode, games, io) {
     }
     spyList.sort((a, b) => a.localeCompare(b, 'th'));
     game.spyLocationList = spyList;
-
     game.players.forEach(player => {
         const socket = io.sockets.sockets.get(player.socketId);
         if (socket) {
-            const payload = {
-                round: game.currentRound, totalRounds: game.settings.rounds, isHost: player.isHost, players: game.players, isSpectator: player.isSpectator, allLocationsData: availableLocationsForSpyList,
-                allPlayerRoles: allPlayerRoles, allLocations: game.spyLocationList
-            };
-            if (player.isSpectator) {
-                payload.location = game.currentLocation;
-                payload.role = "ผู้ชม";
-            } else if (player.role) {
-                const { name: roleName, description: roleDesc } = parseRole(player.role);
-                payload.role = roleName;
-                payload.roleDesc = roleDesc;
-                payload.location = roleName === 'สายลับ' ? 'ไม่ทราบ' : game.currentLocation;
-                if (roleName === 'สายลับ' && game.bountyTarget) payload.bountyTargetName = game.bountyTarget.name;
-            } else return;
+            const payload = { round: game.currentRound, totalRounds: game.settings.rounds, isHost: player.isHost, players: game.players, isSpectator: player.isSpectator, allLocationsData: getAvailableLocations(game.settings.themes), allPlayerRoles, allLocations: game.spyLocationList };
+            if (player.isSpectator) { payload.location = game.currentLocation; payload.role = "ผู้ชม"; }
+            else if (player.role) { const { name: roleName, description: roleDesc } = parseRole(player.role); payload.role = roleName; payload.roleDesc = roleDesc; payload.location = roleName === 'สายลับ' ? 'ไม่ทราบ' : game.currentLocation; }
+            else return;
             socket.emit('gameStarted', payload);
         }
     });
@@ -208,33 +172,26 @@ function endRound(roomCode, reason, games, io) {
     if (!game || game.state !== 'playing') return;
     clearTimers(game);
     game.state = 'voting';
+    game.resultsCalculated = false; // Reset the lock
     const voteReason = reason === 'timer_end' ? 'หมดเวลา! โหวตหาตัวสายลับ' : 'หัวหน้าห้องสั่งจบรอบ!';
     const activePlayers = game.players.filter(p => !p.disconnected && !p.isSpectator);
-    const voteTime = game.settings.voteTime || 120;
-    activePlayers.forEach(voter => {
-        const voteOptions = activePlayers.filter(option => option.id !== voter.id);
-        const socket = io.sockets.sockets.get(voter.socketId);
-        if (socket) socket.emit('startVote', { players: voteOptions, reason: voteReason, voteTime });
-    });
+    const voteTime = game.settings.voteTime;
+    io.to(roomCode).emit('startVote', { players: activePlayers, reason: voteReason, voteTime });
     game.voteTimer = setTimeout(() => calculateVoteResults(roomCode, games, io), voteTime * 1000);
-    // เรียกใช้ Bot Manager ถ้าเป็นเกมบอต
-    if (game.isBotGame) {
-        botManager.runBotVote(roomCode, io, games);
-    }
+    if (game.isBotGame) botManager.runBotVote(roomCode, io, games);
 }
 
 function calculateVoteResults(roomCode, games, io) {
     const game = games[roomCode];
-    if (!game || !['voting', 'revoting'].includes(game.state) || !game.spy) return;
+    if (!game || !['voting', 'revoting'].includes(game.state) || game.resultsCalculated) return;
+    game.resultsCalculated = true; // Set the lock
     const spyId = game.spy.id;
     const voteCounts = {};
     Object.values(game.votes).forEach(votedId => { if (votedId) voteCounts[votedId] = (voteCounts[votedId] || 0) + 1; });
     let maxVotes = 0, mostVotedIds = [];
     for (const playerId in voteCounts) {
-        if (voteCounts[playerId] > maxVotes) {
-            maxVotes = voteCounts[playerId];
-            mostVotedIds = [playerId];
-        } else if (voteCounts[playerId] === maxVotes) mostVotedIds.push(playerId);
+        if (voteCounts[playerId] > maxVotes) { maxVotes = voteCounts[playerId]; mostVotedIds = [playerId]; }
+        else if (voteCounts[playerId] === maxVotes) mostVotedIds.push(playerId);
     }
     if (mostVotedIds.length === 1 && mostVotedIds[0] === spyId) {
         let votersOfSpy = [];
@@ -266,9 +223,7 @@ function initiateSpyEscape(roomCode, reason, games, io) {
             if(playerSocket) playerSocket.emit('spyIsGuessing', { spyName: game.spy.name, taunt: `${reason} ${taunt}` });
         }
     });
-    game.specialTimer = setTimeout(() => {
-        if(games[roomCode] && games[roomCode].state === 'spy-guessing') spyGuessLocation(roomCode, game.spy.socketId, null, games, io);
-    }, 60 * 1000);
+    game.specialTimer = setTimeout(() => { if(games[roomCode]?.state === 'spy-guessing') spyGuessLocation(roomCode, game.spy.socketId, null, games, io); }, 60 * 1000);
 }
 
 function endGamePhase(roomCode, resultText, games, io) {
@@ -286,6 +241,8 @@ function submitVote(roomCode, socketId, votedPlayerId, games, io) {
     if (player && !player.isSpectator) {
         game.votes[socketId] = votedPlayerId;
         const playersWhoCanVote = game.players.filter(p => !p.disconnected && !p.isSpectator);
+        const voterIds = Object.keys(game.votes).map(sId => game.players.find(p => p.socketId === sId)?.id).filter(id => id);
+        io.to(roomCode).emit('voteUpdate', { voters: voterIds, totalVoters: playersWhoCanVote.length });
         if (Object.keys(game.votes).length >= playersWhoCanVote.length) {
             clearTimers(game);
             calculateVoteResults(roomCode, games, io);
@@ -300,46 +257,5 @@ function spyGuessLocation(roomCode, socketId, guessedLocation, games, io) {
     endGamePhase(roomCode, resultText, games, io);
 }
 
-function initiateBountyHunt(roomCode, games, io) {
-    const game = games[roomCode];
-    if (!game || !game.spy || !game.bountyTarget || game.state !== 'playing') return;
-    clearTimers(game);
-    game.state = 'bounty-hunting';
-    const spySocket = io.sockets.sockets.get(game.spy.socketId);
-    if (spySocket) spySocket.emit('bountyHuntPhase', { locations: game.spyLocationList, targetName: game.bountyTarget.name, duration: 60 });
-    game.players.forEach(p => {
-        if (p.id !== game.spy.id && !p.isBot) {
-             const playerSocket = io.sockets.sockets.get(p.socketId);
-             if (playerSocket) playerSocket.emit('waitingForBountyHunt', { spyName: game.spy.name });
-        }
-    });
-    game.specialTimer = setTimeout(() => {
-        if (games[roomCode] && games[roomCode].state === 'bounty-hunting') resolveBountyHunt(roomCode, { location: null, role: null }, games, io);
-    }, 60 * 1000);
-}
-
-function resolveBountyHunt(roomCode, guess, games, io) {
-    const game = games[roomCode];
-    if (!game || !game.spy || !game.bountyTarget) return;
-    clearTimers(game);
-    const locationCorrect = guess.location === game.currentLocation;
-    const targetRoleName = parseRole(game.bountyTarget.role).name;
-    const roleCorrect = guess.role === targetRoleName;
-    let score = 0, resultText = "การล่าค่าหัวสิ้นสุด!\n\n";
-    if (locationCorrect && roleCorrect) {
-        score = 3;
-        resultText += `สายลับทายถูกทั้งหมด! ได้รับ 3 คะแนน!`;
-    } else if (locationCorrect || roleCorrect) {
-        score = 1;
-        resultText += `สายลับทายถูก 1 อย่าง! ได้รับ 1 คะแนน\n- ทายสถานที่: ${locationCorrect ? 'ถูกต้อง' : 'ผิด'}\n- ทายบทบาท (${game.bountyTarget.name}): ${roleCorrect ? 'ถูกต้อง' : 'ผิด'}`;
-    } else {
-        resultText += `สายลับทายผิดทั้งหมด! ผู้เล่นทุกคน (ยกเว้นสายลับ) ได้รับ 1 คะแนน`;
-        game.players.forEach(p => { if (p.id !== game.spy.id && !p.isSpectator && !p.disconnected) p.score++; });
-    }
-    if (score > 0) game.spy.score += score;
-    resultText += `\n\nบทบาทที่ถูกต้องของ ${game.bountyTarget.name} คือ "${targetRoleName}"`;
-    endGamePhase(roomCode, resultText, games, io);
-}
-
-module.exports = { generateRoomCode, startGame, startNewRound, endRound, submitVote, spyGuessLocation, initiateBountyHunt, resolveBountyHunt, getAvailableLocations, clearTimers };
+module.exports = { generateRoomCode, startGame, startNewRound, endRound, submitVote, spyGuessLocation, getAvailableLocations, clearTimers };
 

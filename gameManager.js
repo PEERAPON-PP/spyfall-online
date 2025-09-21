@@ -47,7 +47,19 @@ function clearTimers(game) {
 function startGame(roomCode, settings, games, io) {
     const game = games[roomCode];
     if (!game) return;
-    if (game.players.filter(p => !p.disconnected && !p.isSpectator).length < 1) return;
+    // --- START: MODIFICATION ---
+    const activePlayers = game.players.filter(p => !p.disconnected && !p.isSpectator);
+    if (activePlayers.length < 3) {
+        const host = game.players.find(p => p.isHost);
+        if (host) {
+            const socket = io.sockets.sockets.get(host.socketId);
+            if (socket) {
+                socket.emit('error', 'ต้องมีผู้เล่นอย่างน้อย 3 คนในการเริ่มเกม');
+            }
+        }
+        return; 
+    }
+    // --- END: MODIFICATION ---
     
     const { time, rounds, themes, voteTime, bountyHuntEnabled } = settings;
     game.settings = { time: parseInt(time), rounds: parseInt(rounds), themes: themes || ['default'], voteTime: parseInt(voteTime) || 120, bountyHuntEnabled: bountyHuntEnabled };

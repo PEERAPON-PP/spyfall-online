@@ -45,9 +45,7 @@ function initializeSocketHandlers(io) {
             const game = games[roomCodeUpper];
             if (!game) return socket.emit('error', 'ไม่พบห้องนี้');
 
-            // FIX: Allow joining as spectator anytime
             socket.roomCode = roomCodeUpper;
-            // Determine if the player should be a spectator
             const shouldBeSpectator = game.state !== 'lobby';
             const player = { 
                 id: uuidv4(), 
@@ -64,13 +62,10 @@ function initializeSocketHandlers(io) {
             socket.join(roomCodeUpper);
 
             if(shouldBeSpectator){
-                 // If game is in progress, send spectator-specific data
                 gameManager.sendGameStateToSpectator(game, player, io);
             } else {
-                // If in lobby, just confirm join
                 socket.emit('joinSuccess', { roomCode: roomCodeUpper });
             }
-            // Update player list for everyone
             io.to(roomCodeUpper).emit('updatePlayerList', {players: game.players, settings: game.settings});
         });
         
@@ -95,7 +90,6 @@ function initializeSocketHandlers(io) {
         socket.on('toggleSpectatorMode', () => {
             const { game, player } = getCurrentState();
             if (game && player && !player.isHost) {
-                // Can only toggle in lobby
                 if (game.state === 'lobby') {
                     player.isSpectator = !player.isSpectator;
                     io.to(socket.roomCode).emit('updatePlayerList', {players: game.players, settings: game.settings});
@@ -134,20 +128,10 @@ function initializeSocketHandlers(io) {
 
         socket.on('requestNextRound', () => {
             const { game, player } = getCurrentState();
-            if (game && player && player.isHost && game.currentRound < game.settings.rounds) {
-                if (game.isStartingNextRound) return;
-                game.isStartingNextRound = true;
-
-                // BUG FIX: Redundantly clear timers here to prevent race conditions
-                // where the next round starts before the old timer is fully stopped.
-                gameManager.clearTimers(game);
-
+            
+            // BUG FIX: Add a strict state check. Only allow starting a new round if the previous one is fully completed.
+            if (game && player && player.isHost && game.state === 'post-round' && game.currentRound < game.settings.rounds) {
                 gameManager.startNewRound(socket.roomCode, games, io);
-                
-                // Check if game still exists before trying to modify it
-                if (games[socket.roomCode]) {
-                   games[socket.roomCode].isStartingNextRound = false;
-                }
             }
         });
 
@@ -157,11 +141,8 @@ function initializeSocketHandlers(io) {
                 game.state = 'lobby';
                 game.currentRound = 0;
                 game.usedLocations = [];
-                // FIX: Respect player's choice to be a spectator
                 game.players.forEach(p => {
                     p.score = 0;
-                    // If they weren't a spectator before, they are a player now.
-                    // If they were, they remain a spectator.
                     if (p.isSpectator !== true) {
                         p.isSpectator = false;
                     }

@@ -48,7 +48,7 @@ function initializeSocketHandlers(io) {
             // FIX: ตรรกะการเข้าร่วมขณะเกมกำลังเล่น
             if (game.state !== 'lobby') {
                 socket.roomCode = roomCodeUpper;
-                // กำหนดสถานะเป็น 'waiting' เพื่อให้รอบถัดไปดึงเข้าเป็นผู้เล่น
+                // กำหนดสถานะเป็น 'waiting' เพื่อให้รอจนจบเกม
                 const player = { id: uuidv4(), socketId: socket.id, name: playerName, isHost: false, score: 0, token: playerToken, isSpectator: 'waiting', disconnected: false };
                 game.players.push(player);
                 playerSessions[playerToken] = { roomCode: roomCodeUpper, playerId: player.id };
@@ -147,8 +147,11 @@ function initializeSocketHandlers(io) {
                 game.usedLocations = [];
                 game.players.forEach(p => {
                     p.score = 0;
-                    // Reset all players to be non-spectators when returning to lobby
-                    p.isSpectator = false;
+                    // FIX: ผู้ชมที่ถูกบังคับให้รอ (waiting) จะกลับมาเป็นผู้เล่น
+                    // ผู้ชมโดยสมัครใจ (true) จะยังคงเป็นผู้ชม
+                    if (p.isSpectator === 'waiting') {
+                       p.isSpectator = false;
+                    }
                 });
                 gameManager.clearTimers(game);
                 io.to(socket.roomCode).emit('returnToLobby');
@@ -219,3 +222,4 @@ function initializeSocketHandlers(io) {
 }
 
 module.exports = initializeSocketHandlers;
+

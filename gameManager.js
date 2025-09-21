@@ -157,7 +157,7 @@ async function startNewRound(roomCode, games, io) {
         if (socket) {
             const payload = { round: game.currentRound, totalRounds: game.settings.rounds, isHost: player.isHost, players: game.players, isSpectator: player.isSpectator, allLocationsData: getAvailableLocations(game.settings.themes), allPlayerRoles, allLocations: game.spyLocationList };
             if (player.isSpectator) { payload.location = game.currentLocation; payload.role = "ผู้ชม"; }
-            else if (player.role) { const { name: roleName, description: roleDesc } = parseRole(player.role); payload.role = roleName; payload.roleDesc = roleDesc; payload.location = roleName === 'สายลับ' ? 'ไม่ทราบ' : game.currentLocation; }
+            else if (player.role) { const { name: roleName, description: roleDesc } = parseRole(player.role); payload.role = roleName; payload.roleDesc = roleDesc; payload.location = roleName === 'สายลับ' ? 'ไม่ทราบ' : game.currentLocation; if(roleName==='สายลับ'&&game.bountyTarget)payload.bountyTargetName=game.bountyTarget.name; }
             else return;
             socket.emit('gameStarted', payload);
         }
@@ -172,12 +172,12 @@ function submitVote(roomCode, socketId, votedPlayerId, games, io) {
     if (!game || !['voting', 'revoting'].includes(game.state)) return;
     const player = game.players.find(p => p.socketId === socketId);
     if (player && !player.isSpectator) {
-        game.votes[socketId] = votedPlayerId;
+        game.votes[player.id] = votedPlayerId; // Use player.id as key
         const playersWhoCanVote = game.players.filter(p => !p.disconnected && !p.isSpectator);
-        const voterIds = Object.keys(game.votes).map(sId => game.players.find(p => p.socketId === sId)?.id).filter(id => id);
+        const voterIds = Object.keys(game.votes);
         io.to(roomCode).emit('voteUpdate', { voters: voterIds, totalVoters: playersWhoCanVote.length });
-        if (Object.keys(game.votes).length >= playersWhoCanVote.length) {
-            clearTimeout(game.voteTimer); // Clear the timer immediately
+        if (voterIds.length >= playersWhoCanVote.length) {
+            clearTimeout(game.voteTimer);
             calculateVoteResults(roomCode, games, io);
         }
     }
@@ -211,9 +211,9 @@ function calculateVoteResults(roomCode, games, io) {
     }
     if (mostVotedIds.length === 1 && mostVotedIds[0] === spyId) {
         let votersOfSpy = [];
-        for (const socketId in game.votes) {
-            if (game.votes[socketId] === spyId) {
-                const voter = game.players.find(p => p.socketId === socketId);
+        for (const playerId in game.votes) {
+            if (game.votes[playerId] === spyId) {
+                const voter = game.players.find(p => p.id === playerId);
                 if (voter) { voter.score++; votersOfSpy.push(voter.name); }
             }
         }

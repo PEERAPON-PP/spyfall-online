@@ -45,29 +45,32 @@ function initializeSocketHandlers(io) {
             const game = games[roomCodeUpper];
             if (!game) return socket.emit('error', 'ไม่พบห้องนี้');
 
-            // FIX: ตรรกะการเข้าร่วมขณะเกมกำลังเล่น
-            if (game.state !== 'lobby') {
-                socket.roomCode = roomCodeUpper;
-                // กำหนดสถานะเป็น 'waiting' เพื่อให้รอจนจบเกม
-                const player = { id: uuidv4(), socketId: socket.id, name: playerName, isHost: false, score: 0, token: playerToken, isSpectator: 'waiting', disconnected: false };
-                game.players.push(player);
-                playerSessions[playerToken] = { roomCode: roomCodeUpper, playerId: player.id };
-                socket.join(roomCodeUpper);
-                
-                // ส่งข้อมูลเกมปัจจุบันให้ในฐานะผู้ชมไปก่อน
-                gameManager.sendGameStateToSpectator(game, player, io);
-
-                // อัปเดตรายชื่อผู้เล่นให้ทุกคน
-                io.to(roomCodeUpper).emit('updatePlayerList', {players: game.players, settings: game.settings});
-                return;
-            }
-
+            // FIX: Allow joining as spectator anytime
             socket.roomCode = roomCodeUpper;
-            const player = { id: uuidv4(), socketId: socket.id, name: playerName, isHost: false, score: 0, token: playerToken, isSpectator: false, disconnected: false };
+            // Determine if the player should be a spectator
+            const shouldBeSpectator = game.state !== 'lobby';
+            const player = { 
+                id: uuidv4(), 
+                socketId: socket.id, 
+                name: playerName, 
+                isHost: false, 
+                score: 0, 
+                token: playerToken, 
+                isSpectator: shouldBeSpectator, 
+                disconnected: false 
+            };
             game.players.push(player);
             playerSessions[playerToken] = { roomCode: roomCodeUpper, playerId: player.id };
             socket.join(roomCodeUpper);
-            socket.emit('joinSuccess', { roomCode: roomCodeUpper });
+
+            if(shouldBeSpectator){
+                 // If game is in progress, send spectator-specific data
+                gameManager.sendGameStateToSpectator(game, player, io);
+            } else {
+                // If in lobby, just confirm join
+                socket.emit('joinSuccess', { roomCode: roomCodeUpper });
+            }
+            // Update player list for everyone
             io.to(roomCodeUpper).emit('updatePlayerList', {players: game.players, settings: game.settings});
         });
         
@@ -92,8 +95,11 @@ function initializeSocketHandlers(io) {
         socket.on('toggleSpectatorMode', () => {
             const { game, player } = getCurrentState();
             if (game && player && !player.isHost) {
-                player.isSpectator = !player.isSpectator;
-                io.to(socket.roomCode).emit('updatePlayerList', {players: game.players, settings: game.settings});
+                // Can only toggle in lobby
+                if (game.state === 'lobby') {
+                    player.isSpectator = !player.isSpectator;
+                    io.to(socket.roomCode).emit('updatePlayerList', {players: game.players, settings: game.settings});
+                }
             }
         });
 
@@ -132,7 +138,13 @@ function initializeSocketHandlers(io) {
                 if (game.isStartingNextRound) return;
                 game.isStartingNextRound = true;
 
+                // BUG FIX: Redundantly clear timers here to prevent race conditions
+                // where the next round starts before the old timer is fully stopped.
+                gameManager.clearTimers(game);
+
                 gameManager.startNewRound(socket.roomCode, games, io);
+                
+                // Check if game still exists before trying to modify it
                 if (games[socket.roomCode]) {
                    games[socket.roomCode].isStartingNextRound = false;
                 }
@@ -145,12 +157,13 @@ function initializeSocketHandlers(io) {
                 game.state = 'lobby';
                 game.currentRound = 0;
                 game.usedLocations = [];
+                // FIX: Respect player's choice to be a spectator
                 game.players.forEach(p => {
                     p.score = 0;
-                    // FIX: ผู้ชมที่ถูกบังคับให้รอ (waiting) จะกลับมาเป็นผู้เล่น
-                    // ผู้ชมโดยสมัครใจ (true) จะยังคงเป็นผู้ชม
-                    if (p.isSpectator === 'waiting') {
-                       p.isSpectator = false;
+                    // If they weren't a spectator before, they are a player now.
+                    // If they were, they remain a spectator.
+                    if (p.isSpectator !== true) {
+                        p.isSpectator = false;
                     }
                 });
                 gameManager.clearTimers(game);
@@ -213,7 +226,7 @@ function initializeSocketHandlers(io) {
                                 gameManager.clearTimers(games[roomCodeFound]);
                                 delete games[roomCodeFound];
                             }
-                        }, 600000);
+                        }, 600000); // 10 minutes
                     }
                 }
             }, 1500);

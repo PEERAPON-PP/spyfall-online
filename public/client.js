@@ -42,20 +42,18 @@ function updateScoreboard(players, container, allPlayerRoles = null) {
         leftDiv.className = 'flex-grow flex items-center space-x-2';
         const nameSpan = document.createElement('span');
         
-        // FIX: ปรับปรุง Emoji และตัวหนา
         let prefix = '🎮 '; // Player
         if (player.isHost) prefix = '👑 '; // Host
         else if (player.isSpectator) prefix = '🔎 '; // Spectator
         
         let statusText = '';
-        if (container === playerList && player.isSpectator === 'waiting') {
-            statusText = ' (รอเล่นรอบถัดไป)';
+        // FIX: เปลี่ยนข้อความสำหรับผู้ชมที่รอ
+        if (player.isSpectator === 'waiting') {
+            statusText = ' (ผู้ชม - รอจบเกม)';
         }
-        // FIX: ทำให้ชื่อเป็นตัวหนา
         nameSpan.innerHTML = `${prefix}<span class="font-bold">${player.name}</span><span class="text-gray-500">${statusText}</span>`;
         leftDiv.appendChild(nameSpan);
 
-        // FIX: แสดง Role สำหรับผู้ชมพร้อมแบ่งสี
         if (allPlayerRoles) {
             const roleSpan = document.createElement('span');
             roleSpan.className = 'text-sm';
@@ -96,7 +94,7 @@ function updateScoreboard(players, container, allPlayerRoles = null) {
     };
     
     if(activePlayers.length > 0){
-        if(container === playerList || container === inGameScoreboard){ // Show header in both lobby and game
+        if(container === playerList || container === inGameScoreboard){
             const p_divider = document.createElement('div');
             p_divider.className = 'text-center text-gray-500 text-sm py-1 font-semibold';
             p_divider.textContent = '--- ผู้เล่น ---';
@@ -104,13 +102,12 @@ function updateScoreboard(players, container, allPlayerRoles = null) {
         }
         activePlayers.forEach(player => container.appendChild(createPlayerRow(player)));
     }
-    if (spectators.length > 0) {
-        if(container === playerList || container === inGameScoreboard){ // Show header in both lobby and game
-            const s_divider = document.createElement('div');
-            s_divider.className = 'text-center text-gray-500 text-sm py-1 font-semibold mt-2';
-            s_divider.textContent = '--- ผู้ชม ---';
-            container.appendChild(s_divider);
-        }
+    // FIX: ไม่ต้องแสดงผู้ชมในกระดานคะแนนระหว่างเกม
+    if (spectators.length > 0 && container !== inGameScoreboard) {
+        const s_divider = document.createElement('div');
+        s_divider.className = 'text-center text-gray-500 text-sm py-1 font-semibold mt-2';
+        s_divider.textContent = '--- ผู้ชม ---';
+        container.appendChild(s_divider);
         spectators.forEach(player => container.appendChild(createPlayerRow(player)));
     }
 }
@@ -287,7 +284,7 @@ socket.on('settingsUpdated', (settings) => {
 socket.on('gameStarted', (data) => {
     showScreen('game');
     showModal(null);
-    currentRoundLocationsData = data.allLocationsData || []; // Store location data
+    currentRoundLocationsData = data.allLocationsData || [];
     
     const self = data.players.find(p => p.socketId === socket.id);
     isHost = self ? self.isHost : false;
@@ -301,6 +298,10 @@ socket.on('gameStarted', (data) => {
     roleDescDisplay.classList.add('hidden');
     spyTargetDisplay.classList.add('hidden');
     bountyHuntBtn.classList.add('hidden');
+    
+    // FIX: ปรับสีของสถานที่และบทบาท
+    locationDisplay.classList.remove('text-red-600', 'text-blue-600', 'font-bold');
+    roleDisplay.classList.remove('text-red-600', 'text-blue-600', 'font-bold');
 
     if (self && (self.isSpectator === true || self.isSpectator === 'waiting')) {
         locationDisplay.textContent = data.location;
@@ -309,14 +310,19 @@ socket.on('gameStarted', (data) => {
         ingameActions.classList.add('hidden');
         updateScoreboard(data.players, inGameScoreboard, data.allPlayerRoles);
     } else {
+        const isSpy = data.role === 'สายลับ';
         locationDisplay.textContent = data.location;
+        locationDisplay.classList.add(isSpy ? 'text-red-600' : 'text-blue-600', 'font-bold');
+
         roleLabel.textContent = "บทบาท:"
         roleDisplay.textContent = data.role;
+        roleDisplay.classList.add(isSpy ? 'text-red-600' : 'text-blue-600', 'font-bold');
+        
         if (data.roleDesc) {
             roleDescDisplay.textContent = `"${data.roleDesc}"`;
             roleDescDisplay.classList.remove('hidden');
         }
-        if (data.role === 'สายลับ' && data.bountyTargetName) {
+        if (isSpy && data.bountyTargetName) {
             spyTargetName.textContent = data.bountyTargetName;
             spyTargetDisplay.classList.remove('hidden');
             bountyHuntBtn.classList.remove('hidden');
@@ -325,7 +331,6 @@ socket.on('gameStarted', (data) => {
         updateScoreboard(data.players, inGameScoreboard, (self && self.isSpectator) ? data.allPlayerRoles : null);
         if (data.allLocations) { 
             locationsList.innerHTML = '';
-            // FIX: ใช้ตัวอักษรหนาสำหรับรายชื่อสถานที่
             data.allLocations.forEach(locName => {
                 const div = document.createElement('div');
                 div.textContent = locName;
@@ -427,7 +432,6 @@ socket.on('roundOver', ({ location, spyName, resultText, isFinalRound, players }
         backToLobbyBtn.classList.add('hidden');
     }
 
-    // FIX: เปลี่ยนสีข้อความผลลัพธ์ตามการกระทำของสายลับ
     roundResultText.textContent = resultMessage;
     roundResultText.classList.remove('text-red-600', 'text-gray-700');
     if (resultMessage.includes('สายลับ')) {
@@ -442,3 +446,4 @@ socket.on('kicked', () => { alert('คุณถูกเตะออกจาก
 socket.on('playerDisconnected', name => { lobbyMessage.textContent = `${name} หลุดออกจากเกม...`; });
 socket.on('playerTookOver', ({ newName, oldName }) => { lobbyMessage.textContent = `${newName} ได้เข้าร่วมแทน ${oldName}!`; });
 socket.on('newHost', name => { lobbyMessage.textContent = `${name} ได้เป็นหัวหน้าห้องคนใหม่`; });
+

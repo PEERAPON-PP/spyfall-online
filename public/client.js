@@ -38,7 +38,7 @@ function updateScoreboard(players, container, allPlayerRoles = null) {
         leftDiv.appendChild(nameSpan);
         if (allPlayerRoles) {
             const roleData = allPlayerRoles.find(r => r.id === player.id);
-            if (roleData) { const roleSpan = document.createElement('span'); roleSpan.className = 'text-sm'; roleSpan.innerHTML = `- <span class="font-semibold text-indigo-600">${roleData.role}</span>`; leftDiv.appendChild(roleSpan); }
+            if (roleData) { const roleSpan = document.createElement('span'); roleSpan.className = 'text-sm'; if(roleData.role === 'สายลับ') roleSpan.classList.add('spectator-spy-role'); roleSpan.innerHTML = `- <span class="font-semibold">${roleData.role}</span>`; leftDiv.appendChild(roleSpan); }
         }
         const rightDiv = document.createElement('div');
         rightDiv.className = 'flex items-center space-x-2';
@@ -112,7 +112,9 @@ socket.on('gameStarted', (data) => {
     else {
         roleLabel.textContent = "บทบาท:";
         if (data.roleDesc) { roleDescDisplay.textContent = `"${data.roleDesc}"`; roleDescDisplay.classList.remove('hidden'); } else roleDescDisplay.classList.add('hidden');
-        if (data.role === 'สายลับ') bountyHuntBtn.classList.remove('hidden');
+        if (data.role === 'สายลับ' && data.bountyTargetName) {
+            spyTargetName.textContent = data.bountyTargetName; spyTargetDisplay.classList.remove('hidden'); bountyHuntBtn.classList.remove('hidden');
+        }
         updateScoreboard(data.players, inGameScoreboard);
     }
     locationsList.innerHTML = '';
@@ -125,7 +127,7 @@ socket.on('startVote', ({ players, reason, voteTime }) => {
     const self = players.find(p => p.token === playerToken);
     voterStatusList.innerHTML = '';
     players.forEach(p => { const div = document.createElement('div'); div.id = `voter-status-${p.id}`; div.textContent = `${p.name}: ⏳ กำลังตัดสินใจ...`; voterStatusList.appendChild(div); });
-    if (self?.isSpectator) { votePlayerButtons.innerHTML = ''; abstainVoteBtn.classList.add('hidden'); }
+    if (self?.isSpectator) { votePlayerButtons.innerHTML = '<p class="text-gray-500 italic">กำลังรอผู้เล่นอื่นโหวต...</p>'; abstainVoteBtn.classList.add('hidden'); }
     else {
         votePlayerButtons.innerHTML = '';
         players.forEach(p => { if (p.token !== playerToken) { const btn = document.createElement('button'); btn.textContent = p.name; btn.className = 'btn btn-primary vote-btn w-full mb-2'; btn.onclick = () => { socket.emit('submitVote', p.id); votePlayerButtons.querySelectorAll('button').forEach(b => b.disabled = true); abstainVoteBtn.disabled = true; }; votePlayerButtons.appendChild(btn); } });
@@ -134,7 +136,7 @@ socket.on('startVote', ({ players, reason, voteTime }) => {
     let timeLeft = voteTime; if (voteTimerInterval) clearInterval(voteTimerInterval); voteTimerDisplay.textContent = timeLeft;
     voteTimerInterval = setInterval(() => { if(--timeLeft >= 0) voteTimerDisplay.textContent = timeLeft; else clearInterval(voteTimerInterval); }, 1000);
 });
-socket.on('voteUpdate', ({ voters, totalVoters }) => { voteProgressCount.textContent = voters.length; voteProgressTotal.textContent = totalVoters; voters.forEach(voterId => { const statusEl = $(`voter-status-${voterId}`); if (statusEl) statusEl.textContent = `${statusEl.textContent.split(':')[0]}: ✅ โหวตแล้ว`; }); });
+socket.on('voteUpdate', ({ voters, totalVoters }) => { voteProgressCount.textContent = voters.length; voteProgressTotal.textContent = totalVoters; voterStatusList.querySelectorAll('div').forEach(div => { const id = div.id.replace('voter-status-', ''); if(voters.includes(id)) { div.textContent = `${div.textContent.split(':')[0]}: ✅ โหวตแล้ว`; } }); });
 socket.on('spyGuessPhase', ({ locations, taunt, duration }) => { showModal('spyGuess'); spyLocationGuess.innerHTML = ''; locations.forEach(loc => { const o=document.createElement('option'); o.value=loc; o.textContent=loc; spyLocationGuess.appendChild(o); }); spyGuessTaunt.textContent = taunt || ""; let timeLeft = duration; if(specialTimerInterval) clearInterval(specialTimerInterval); spyGuessTimer.textContent = timeLeft; specialTimerInterval = setInterval(() => { if(--timeLeft >= 0) spyGuessTimer.textContent = timeLeft; else clearInterval(specialTimerInterval); }, 1000); });
 socket.on('spyIsGuessing', ({ spyName, taunt }) => { showModal('waitingForSpy'); waitingSpyName.textContent = spyName; waitingTaunt.textContent = taunt || ""; });
 socket.on('bountyHuntPhase', ({ locations, targetName, duration }) => { showModal('bountyHunt'); bountyLocationGuess.innerHTML = '<option value="">เลือกสถานที่...</option>'; locations.forEach(loc => { const o=document.createElement('option'); o.value=loc; o.textContent=loc; bountyLocationGuess.appendChild(o); }); bountyRoleGuess.innerHTML = '<option value="">กรุณาเลือกสถานที่ก่อน</option>'; bountyRoleGuess.disabled = true; bountyTargetName.textContent = targetName; let timeLeft = duration; if(specialTimerInterval) clearInterval(specialTimerInterval); bountyHuntTimer.textContent = timeLeft; specialTimerInterval = setInterval(() => { if(--timeLeft >= 0) bountyHuntTimer.textContent = timeLeft; else clearInterval(specialTimerInterval); }, 1000); });
@@ -152,7 +154,7 @@ socket.on('roundOver', ({ location, spyName, resultText, isFinalRound, players }
         backToLobbyBtn.classList.toggle('hidden', !(self && self.isHost));
     } else {
         endModalTitle.textContent = "จบรอบ";
-        nextRoundBtn.classList.toggle('hidden', !(self && self.isHost) || self?.isSpectator);
+        nextRoundBtn.classList.toggle('hidden', !(self && self.isHost));
         backToLobbyBtn.classList.add('hidden');
     }
     roundResultText.textContent = resultText;

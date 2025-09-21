@@ -143,7 +143,10 @@ function initializeSocketHandlers(io) {
                 game.state = 'lobby';
                 game.currentRound = 0;
                 game.usedLocations = []; // --- MODIFICATION: Was 'locationDeck' ---
-                game.players.forEach(p => p.score = 0);
+                game.players.forEach(p => {
+                    p.score = 0;
+                    p.isSpectator = false;
+                });
                 gameManager.clearTimers(game);
                 io.to(socket.roomCode).emit('returnToLobby');
                 io.to(socket.roomCode).emit('updatePlayerList', {players: game.players, settings: game.settings});
@@ -213,3 +216,4 @@ function initializeSocketHandlers(io) {
 }
 
 module.exports = initializeSocketHandlers;
+

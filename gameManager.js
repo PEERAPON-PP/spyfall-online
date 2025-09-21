@@ -101,6 +101,10 @@ function startNewRound(roomCode, games, io) {
         return;
     }
 
+    if (!game.usedLocations) {
+        game.usedLocations = [];
+    }
+
     let locationPool = availableLocations.filter(loc => !game.usedLocations.includes(loc.name));
     if (locationPool.length === 0) { game.usedLocations = []; locationPool = availableLocations; }
     
@@ -459,3 +463,4 @@ module.exports = {
     sendGameStateToSpectator,
     clearTimers
 };
+

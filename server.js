@@ -7,7 +7,9 @@ const initializeSocketHandlers = require('./socketHandlers');
 const app = express();
 const server = http.createServer(app);
 const io = socketIo(server, {
-    pingTimeout: 60000,
+    // FIX: เพิ่ม pingTimeout และ pingInterval เพื่อรักษาการเชื่อมต่อให้นานขึ้น
+    pingTimeout: 300000, // 5 นาที
+    pingInterval: 25000   // 25 วินาที
 });
 
 // บอกให้ Express เสิร์ฟไฟล์จากโฟลเดอร์ 'public'

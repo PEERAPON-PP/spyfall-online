@@ -7,7 +7,7 @@ const timerDisplay = $('timer'), locationDisplay = $('location-display'), roleDi
 const locationsList = $('locations-list'), closeLocationsBtn = $('close-locations-btn'), voteReason = $('vote-reason'), voteTimerDisplay = $('vote-timer'), votePlayerButtons = $('vote-player-buttons'), abstainVoteBtn = $('abstain-vote-btn'), voteProgressCount = $('vote-progress-count'), voteProgressTotal = $('vote-progress-total'), voterStatusList = $('voter-status-list');
 const spyLocationGuess = $('spy-location-guess'), confirmSpyGuessBtn = $('confirm-spy-guess-btn'), waitingSpyName = $('waiting-spy-name'), waitingTaunt = $('waiting-taunt'), spyGuessTaunt = $('spy-guess-taunt'), spyGuessTimer = $('spy-guess-timer');
 const endModalTitle = $('end-modal-title'), endLocation = $('end-location'), endSpy = $('end-spy'), roundResultText = $('round-result-text'), nextRoundBtn = $('next-round-btn'), backToLobbyBtn = $('back-to-lobby-btn');
-const bountyHuntBtn = $('bounty-hunt-btn'), spyTargetDisplay = $('spy-target-display'), spyTargetName = $('spy-target-name');
+const bountyHuntBtn = $('bounty-hunt-btn');
 const bountyHuntTimer = $('bounty-hunt-timer'), bountyLocationGuess = $('bounty-location-guess'), bountyRoleGuess = $('bounty-role-guess'), bountyTargetName = $('bounty-target-name'), confirmBountyGuessBtn = $('confirm-bounty-guess-btn'), waitingBountySpyName = $('waiting-bounty-spy-name');
 
 let isHost = false, voteTimerInterval = null, playerToken = null, specialTimerInterval = null, currentRoundRoles = null, wakeLock = null;
@@ -23,8 +23,14 @@ function showModal(modalName) { if(specialTimerInterval) clearInterval(specialTi
 function updateScoreboard(players, container, allPlayerRoles = null) {
     container.innerHTML = '';
     const self = players.find(p => p.token === playerToken);
-    const activePlayers = players.filter(p => !p.isSpectator).sort((a, b) => b.score - a.score);
-    const spectators = players.filter(p => p.isSpectator).sort((a, b) => b.score - a.score);
+    let playersToList = players;
+    // For in-game scoreboard, filter out spectators
+    if (container === inGameScoreboard) {
+        playersToList = players.filter(p => !p.isSpectator);
+    }
+    const activePlayers = playersToList.filter(p => !p.isSpectator).sort((a, b) => b.score - a.score);
+    const spectators = playersToList.filter(p => p.isSpectator).sort((a, b) => b.score - a.score);
+    
     const createPlayerRow = (player) => {
         const playerDiv = document.createElement('div');
         playerDiv.className = 'flex justify-between items-center bg-gray-100 p-2 rounded';
@@ -107,14 +113,11 @@ socket.on('gameStarted', (data) => {
     hostEndRoundBtn.classList.toggle('hidden', !isHost || self?.isSpectator);
     ingameActions.classList.toggle('hidden', !!self?.isSpectator);
     locationDisplay.textContent = data.location; roleDisplay.textContent = data.role;
-    bountyHuntBtn.classList.add('hidden'); spyTargetDisplay.classList.add('hidden');
+    bountyHuntBtn.classList.toggle('hidden', !(data.role === 'สายลับ' && data.canBountyHunt));
     if (self?.isSpectator) { roleLabel.textContent = "สถานะ:"; updateScoreboard(data.players, inGameScoreboard, currentRoundRoles); }
     else {
         roleLabel.textContent = "บทบาท:";
         if (data.roleDesc) { roleDescDisplay.textContent = `"${data.roleDesc}"`; roleDescDisplay.classList.remove('hidden'); } else roleDescDisplay.classList.add('hidden');
-        if (data.role === 'สายลับ' && data.bountyTargetName) {
-            spyTargetName.textContent = data.bountyTargetName; spyTargetDisplay.classList.remove('hidden'); bountyHuntBtn.classList.remove('hidden');
-        }
         updateScoreboard(data.players, inGameScoreboard);
     }
     locationsList.innerHTML = '';
@@ -138,7 +141,7 @@ socket.on('startVote', ({ players, reason, voteTime }) => {
 });
 socket.on('voteUpdate', ({ voters, totalVoters }) => { voteProgressCount.textContent = voters.length; voteProgressTotal.textContent = totalVoters; voterStatusList.querySelectorAll('div').forEach(div => { const id = div.id.replace('voter-status-', ''); if(voters.includes(id)) { div.textContent = `${div.textContent.split(':')[0]}: ✅ โหวตแล้ว`; } }); });
 socket.on('spyGuessPhase', ({ locations, taunt, duration }) => { showModal('spyGuess'); spyLocationGuess.innerHTML = ''; locations.forEach(loc => { const o=document.createElement('option'); o.value=loc; o.textContent=loc; spyLocationGuess.appendChild(o); }); spyGuessTaunt.textContent = taunt || ""; let timeLeft = duration; if(specialTimerInterval) clearInterval(specialTimerInterval); spyGuessTimer.textContent = timeLeft; specialTimerInterval = setInterval(() => { if(--timeLeft >= 0) spyGuessTimer.textContent = timeLeft; else clearInterval(specialTimerInterval); }, 1000); });
-socket.on('spyIsGuessing', ({ spyName, taunt }) => { showModal('waitingForSpy'); waitingSpyName.textContent = spyName; waitingTaunt.textContent = taunt || ""; });
+socket.on('spyIsGuessing', ({ spyName }) => { showModal('waitingForSpy'); waitingSpyName.textContent = spyName; });
 socket.on('bountyHuntPhase', ({ locations, targetName, duration }) => { showModal('bountyHunt'); bountyLocationGuess.innerHTML = '<option value="">เลือกสถานที่...</option>'; locations.forEach(loc => { const o=document.createElement('option'); o.value=loc; o.textContent=loc; bountyLocationGuess.appendChild(o); }); bountyRoleGuess.innerHTML = '<option value="">กรุณาเลือกสถานที่ก่อน</option>'; bountyRoleGuess.disabled = true; bountyTargetName.textContent = targetName; let timeLeft = duration; if(specialTimerInterval) clearInterval(specialTimerInterval); bountyHuntTimer.textContent = timeLeft; specialTimerInterval = setInterval(() => { if(--timeLeft >= 0) bountyHuntTimer.textContent = timeLeft; else clearInterval(specialTimerInterval); }, 1000); });
 socket.on('waitingForBountyHunt', ({spyName}) => { showModal('waitingForBounty'); waitingBountySpyName.textContent = spyName; });
 socket.on('roundOver', ({ location, spyName, resultText, isFinalRound, players }) => {

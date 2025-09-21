@@ -55,11 +55,11 @@
                     <div>
                         <label for="rounds-select" class="block text-sm font-medium">รอบ:</label>
                         <select id="rounds-select" data-setting="rounds" class="input-field w-full">
-                            <option value="1">1 รอบ</option>
-                            <option value="3">3 รอบ</option>
-                            <option value="5" selected>5 รอบ</option>
-                            <option value="8">8 รอบ</option>
-                            <option value="10">10 รอบ</option>
+                            <option value="1">1</option>
+                            <option value="3">3</option>
+                            <option value="5" selected>5</option>
+                            <option value="8">8</option>
+                            <option value="10">10</option>
                         </select>
                     </div>
                  </div>
@@ -96,7 +96,7 @@
                 <h2 id="game-header" class="text-3xl font-bold game-header">Spyfall</h2>
                 <div class="flex items-center space-x-2">
                      <button id="bounty-hunt-btn" class="hidden btn btn-sm bg-red-500 hover:bg-red-600 text-white">แสดงตัว</button>
-                     <div id="timer" class="text-2xl font-mono timer-display px-3 py-1 rounded-md">05:00</div>
+                     <div id="timer" class="text-2xl font-mono timer-display px-3 py-1 rounded-md">00:00</div>
                 </div>
             </div>
             <div class="flex justify-between items-center text-sm text-gray-500 mb-2">
@@ -125,8 +125,8 @@
         <div id="locations-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4"><div class="card w-full max-w-lg max-h-[80vh] overflow-y-auto"><h3 class="text-xl font-bold mb-4">รายชื่อสถานที่</h3><div id="locations-list" class="location-grid text-sm"></div><button id="close-locations-btn" class="btn btn-primary w-full mt-6">ปิด</button></div></div>
         <div id="voting-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4"><div class="card text-center w-full max-w-md"><h3 id="vote-reason" class="text-2xl font-bold mb-2">โหวตหาตัวสายลับ</h3><p class="mb-4">เหลือเวลา <span id="vote-timer" class="font-bold">120</span> วินาที</p><div id="vote-player-buttons" class="mb-4"></div><button id="abstain-vote-btn" class="btn btn-secondary w-full text-sm py-2">งดออกเสียง</button></div></div>
         <div id="spy-guess-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4"><div class="card text-center w-full max-w-md"><h3 class="text-2xl font-bold mb-4">คุณคือสายลับ!</h3><p id="spy-guess-taunt" class="mb-2 text-red-500 font-semibold"></p><p class="mb-4">คุณหนีรอดมาได้! เลือกทายสถานที่เพื่อรับคะแนนพิเศษ (เหลือเวลา <span id="spy-guess-timer" class="font-bold">60</span> วิ)</p><select id="spy-location-guess" class="input-field mb-4"></select><button id="confirm-spy-guess-btn" class="btn btn-primary w-full">ยืนยัน</button></div></div>
-        <div id="waiting-for-spy-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4"><div class="card text-center w-full max-w-md"><p id="waiting-taunt" class="mb-2 text-red-500 font-semibold"></p><h3 class="text-2xl font-bold mb-4">สายลับหนีรอด!</h3><p>กำลังรอ <span id="waiting-spy-name" class="font-bold"></span> ทายสถานที่...</p></div></div>
-        <div id="end-round-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4"><div class="card text-center w-full max-w-md"><h3 id="end-modal-title" class="text-2xl font-bold mb-4">จบรอบ</h3><p class="text-lg mb-2">สถานที่คือ:</p><p id="end-location" class="text-xl font-semibold text-indigo-600 mb-4"></p><p class="text-lg mb-2">สายลับคือ:</p><p id="end-spy" class="text-xl font-semibold text-red-500 mb-4"></p><p id="round-result-text" class="text-gray-700 my-4 whitespace-pre-wrap"></p><button id="next-round-btn" class="btn btn-primary w-full hidden">รอบต่อไป</button><button id="back-to-lobby-btn" class="btn btn-secondary w-full hidden">กลับไปที่ล็อบบี้</button></div></div>
+        <div id="waiting-for-spy-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4"><div class="card text-center w-full max-w-md"><p id="spy-guess-taunt" class="mb-2 text-red-500 font-semibold"></p><h3 class="text-2xl font-bold mb-4">สายลับหนีรอด!</h3><p>กำลังรอ <span id="waiting-spy-name" class="font-bold"></span> ทายสถานที่...</p></div></div>
+        <div id="end-round-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4"><div class="card text-center w-full max-w-md"><h3 id="end-modal-title" class="text-2xl font-bold mb-4">จบรอบ</h3><p class="text-lg mb-2">สถานที่คือ:</p><p id="end-location" class="text-xl font-semibold text-indigo-600 mb-4"></p><p class="text-lg mb-2">สายลับคือ:</p><p id="end-spy" class="text-xl font-semibold text-red-500 mb-4"></p><p id="round-result-text" class="text-gray-700 my-4 whitespace-pre-wrap"></p><p id="next-round-countdown" class="hidden text-gray-500 mt-2"></p><button id="next-round-btn" class="btn btn-primary w-full hidden mt-2">รอบต่อไป</button><button id="back-to-lobby-btn" class="btn btn-secondary w-full hidden mt-2">กลับไปที่ล็อบบี้</button></div></div>
         
         <!-- Bounty Hunt Modals -->
         <div id="bounty-hunt-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4">
@@ -160,3 +160,4 @@
     <script src="client.js"></script>
 </body>
 </html>
+

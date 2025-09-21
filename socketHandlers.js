@@ -30,7 +30,7 @@ function initializeSocketHandlers(io) {
                 state: 'lobby', 
                 settings: { time: 300, rounds: 5, themes: ['default'], voteTime: 120, bountyHuntEnabled: false }, 
                 currentRound: 0, 
-                usedLocations: [] // --- MODIFICATION: Was 'locationDeck' ---
+                usedLocations: []
             };
             const player = { id: uuidv4(), socketId: socket.id, name: playerName, isHost: true, score: 0, token: playerToken, isSpectator: false, disconnected: false };
             games[roomCode].players.push(player);
@@ -125,11 +125,9 @@ function initializeSocketHandlers(io) {
         socket.on('requestNextRound', () => {
             const { game, player } = getCurrentState();
             if (game && player && player.isHost && game.currentRound < game.settings.rounds) {
-                // Prevent race condition from double-clicking "Next Round" button
                 if (game.isStartingNextRound) return;
                 game.isStartingNextRound = true;
 
-                // --- MODIFICATION: Fixed invalid '.finally()' call ---
                 gameManager.startNewRound(socket.roomCode, games, io);
                 if (games[socket.roomCode]) {
                    games[socket.roomCode].isStartingNextRound = false;
@@ -142,7 +140,7 @@ function initializeSocketHandlers(io) {
             if (game && player && player.isHost) {
                 game.state = 'lobby';
                 game.currentRound = 0;
-                game.usedLocations = []; // --- MODIFICATION: Was 'locationDeck' ---
+                game.usedLocations = [];
                 game.players.forEach(p => {
                     p.score = 0;
                     p.isSpectator = false;

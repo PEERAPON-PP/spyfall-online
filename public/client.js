@@ -13,6 +13,7 @@ const bountyHuntTimer = $('bounty-hunt-timer'), bountyLocationGuess = $('bounty-
 
 let isHost = false, voteTimerInterval = null, playerToken = null, specialTimerInterval = null;
 let currentRoundLocationsData = []; // Store full location data for the round
+let currentRoundRoles = null; // Store roles for spectator view
 const socket = io();
 
 // --- Utility Functions ---
@@ -41,7 +42,17 @@ function updateScoreboard(players, container, allPlayerRoles = null) {
         const leftDiv = document.createElement('div');
         leftDiv.className = 'flex-grow flex items-center space-x-2';
         const nameSpan = document.createElement('span');
-        const prefix = player.isHost ? '👑 ' : (player.isSpectator ? '👁️ ' : '');
+        
+        // --- NEW ICON LOGIC ---
+        let prefix = '';
+        if (player.isHost) {
+            prefix = '👑 ';
+        } else if (player.isSpectator) {
+            prefix = '🔎 ';
+        } else {
+            prefix = '🎮 ';
+        }
+        
         let statusText = '';
         if (container === playerList && player.isSpectator === 'waiting') {
             statusText = ' (รอเล่นรอบถัดไป)';
@@ -53,7 +64,7 @@ function updateScoreboard(players, container, allPlayerRoles = null) {
             const roleSpan = document.createElement('span');
             roleSpan.className = 'text-sm';
             const playerRoleData = allPlayerRoles.find(r => r.id === player.id);
-            if (playerRoleData) {
+            if (playerRoleData && playerRoleData.role !== 'สายลับ') { // Don't reveal spy role unless it's the end of round scoreboard
                roleSpan.innerHTML = `- <span class="font-semibold text-indigo-600">${playerRoleData.role}</span>`;
                leftDiv.appendChild(roleSpan);
             }
@@ -140,6 +151,7 @@ createRoomBtn.addEventListener('click', () => {
     if (!n) { nameError.classList.remove('hidden'); return; }
     nameError.classList.add('hidden');
     if (!playerToken) { playerToken = generateToken(); localStorage.setItem('playerToken', playerToken); }
+    localStorage.setItem('playerName', n); // Save player name
     socket.emit('createRoom', { playerName: n, playerToken });
 });
 joinRoomBtn.addEventListener('click', () => {
@@ -149,6 +161,7 @@ joinRoomBtn.addEventListener('click', () => {
     nameError.classList.add('hidden');
     if (!c) return;
     if (!playerToken) { playerToken = generateToken(); localStorage.setItem('playerToken', playerToken); }
+    localStorage.setItem('playerName', n); // Save player name
     socket.emit('joinRoom', { playerName: n, roomCode: c, playerToken });
 });
 copyCodeBtn.addEventListener('click', () => { navigator.clipboard.writeText(lobbyRoomCode.textContent).then(() => { copyCodeBtn.textContent = 'คัดลอกแล้ว!'; setTimeout(() => copyCodeBtn.textContent = 'คัดลอก', 2000); }); });
@@ -158,13 +171,7 @@ startGameBtn.addEventListener('click', () => {
         alert("กรุณาเลือกโหมดอย่างน้อย 1 โหมด");
         return;
     }
-    socket.emit('startGame', { 
-        time: timerSelect.value, 
-        rounds: roundsSelect.value, 
-        themes: selectedThemes, 
-        voteTime: voteTimerSelect.value, 
-        bountyHuntEnabled: bountyHuntCheckbox.checked
-    });
+    socket.emit('startGame', { time: timerSelect.value, rounds: roundsSelect.value, themes: selectedThemes, voteTime: voteTimerSelect.value, bountyHuntEnabled: bountyHuntCheckbox.checked });
 });
 hostEndRoundBtn.addEventListener('click', () => socket.emit('hostEndRound'));
 abstainVoteBtn.addEventListener('click', () => submitVote(null));
@@ -200,6 +207,14 @@ bountyLocationGuess.addEventListener('change', () => {
         bountyRoleGuess.disabled = false;
     }
 });
+// Auto-fill player name from localStorage
+window.addEventListener('DOMContentLoaded', () => {
+    const savedName = localStorage.getItem('playerName');
+    if (savedName) {
+        playerNameInput.value = savedName;
+    }
+});
+
 
 // --- Socket.IO Handlers ---
 socket.on('connect', () => {
@@ -211,28 +226,13 @@ socket.on('connect', () => {
 });
 socket.on('roomCreated', d => { showScreen('lobby'); lobbyRoomCode.textContent = d.roomCode; localStorage.setItem('lastRoomCode', d.roomCode); });
 socket.on('joinSuccess', d => { showScreen('lobby'); lobbyRoomCode.textContent = d.roomCode; localStorage.setItem('lastRoomCode', d.roomCode); });
-socket.on('joinSuccessAsSpectator', ({ roomCode }) => {
-    showScreen('lobby');
-    lobbyRoomCode.textContent = roomCode;
-    localStorage.setItem('lastRoomCode', roomCode);
-    lobbyMessage.textContent = 'เกมกำลังดำเนินอยู่ คุณจะเข้าร่วมในรอบถัดไป';
-});
-socket.on('rejoinSuccess', ({ game, roomCode, self }) => {
-    socket.playerData = self;
-    lobbyRoomCode.textContent = roomCode;
-    localStorage.setItem('lastRoomCode', roomCode);
-    showScreen(game.state === 'lobby' ? 'lobby' : 'game');
-    if (game.state !== 'lobby') {
-        setGameTheme(self.role);
-        gameRoomCode.textContent = roomCode;
-    }
-});
+
 socket.on('error', m => alert(m));
 
 socket.on('updatePlayerList', ({players, settings}) => {
     const self = players.find(p => p.socketId === socket.id);
     isHost = self ? self.isHost : false;
-    if (self) socket.playerData = self;
+
     updateScoreboard(players, playerList);
     if (settings) {
         timerSelect.value = settings.time;
@@ -246,11 +246,12 @@ socket.on('updatePlayerList', ({players, settings}) => {
     const settingInputs = gameSettings.querySelectorAll('select, input[type="checkbox"]');
     settingInputs.forEach(input => input.disabled = !isHost);
     
+    const activePlayers = players.filter(p => !p.disconnected && !p.isSpectator).length;
+    startGameBtn.disabled = activePlayers < 3; // Minimum 3 players to start
+
     if (isHost) {
-        const activePlayers = players.filter(p => !p.disconnected && !p.isSpectator).length;
         startGameBtn.classList.remove('hidden');
-        startGameBtn.disabled = activePlayers < 1;
-        lobbyMessage.textContent = 'คุณคือหัวหน้าห้อง กดเริ่มเกมได้เลย!';
+        lobbyMessage.textContent = activePlayers < 3 ? 'ต้องมีผู้เล่นอย่างน้อย 3 คน' : 'คุณคือหัวหน้าห้อง กดเริ่มเกมได้เลย!';
     } else {
         startGameBtn.classList.add('hidden');
         if (self && self.isSpectator) lobbyMessage.textContent = 'คุณอยู่ในโหมดผู้ชม รอหัวหน้าห้องเริ่มเกม';
@@ -271,7 +272,8 @@ socket.on('settingsUpdated', (settings) => {
 socket.on('gameStarted', (data) => {
     showScreen('game');
     showModal(null);
-    currentRoundLocationsData = data.allLocationsData || []; // Store location data
+    currentRoundLocationsData = data.allLocationsData || [];
+    currentRoundRoles = data.allPlayerRoles || null; // Store roles for spectator
     
     const self = data.players.find(p => p.socketId === socket.id);
     isHost = self ? self.isHost : false;
@@ -285,17 +287,18 @@ socket.on('gameStarted', (data) => {
     roleDescDisplay.classList.add('hidden');
     spyTargetDisplay.classList.add('hidden');
     bountyHuntBtn.classList.add('hidden');
+    
+    locationDisplay.textContent = data.location;
+    roleDisplay.textContent = data.role;
+    
+    // Always show the locations button for non-spectators
+    ingameActions.classList.toggle('hidden', !!(self && self.isSpectator));
 
     if (self && self.isSpectator) {
-        locationDisplay.textContent = data.location;
         roleLabel.textContent = "สถานะ:"
-        roleDisplay.textContent = "คุณเป็นผู้ชม";
-        ingameActions.classList.add('hidden');
-        updateScoreboard(data.players, inGameScoreboard, data.allPlayerRoles);
+        updateScoreboard(data.players, inGameScoreboard, currentRoundRoles);
     } else {
-        locationDisplay.textContent = data.location;
         roleLabel.textContent = "บทบาท:"
-        roleDisplay.textContent = data.role;
         if (data.roleDesc) {
             roleDescDisplay.textContent = `"${data.roleDesc}"`;
             roleDescDisplay.classList.remove('hidden');
@@ -305,35 +308,42 @@ socket.on('gameStarted', (data) => {
             spyTargetDisplay.classList.remove('hidden');
             bountyHuntBtn.classList.remove('hidden');
         }
-        ingameActions.classList.remove('hidden');
         updateScoreboard(data.players, inGameScoreboard);
-        if (data.allLocations) { 
-            locationsList.innerHTML = '';
-            data.allLocations.forEach(locName => {
-                const div = document.createElement('div');
-                div.textContent = locName;
-                div.className = 'p-2 bg-gray-100 rounded location-item font-bold';
-                div.onclick = () => div.classList.toggle('eliminated');
-                locationsList.appendChild(div);
-            });
-        }
     }
+    
+    // Populate location list for everyone
+    locationsList.innerHTML = '';
+    (data.allLocations || []).forEach(locName => {
+        const div = document.createElement('div');
+        div.textContent = locName;
+        div.className = 'p-2 bg-gray-100 rounded location-item font-bold';
+        div.onclick = () => div.classList.toggle('eliminated');
+        locationsList.appendChild(div);
+    });
 });
 
 socket.on('timerUpdate', ({ timeLeft, players }) => {
     timerDisplay.textContent = `${String(Math.floor(timeLeft/60)).padStart(2,'0')}:${String(timeLeft%60).padStart(2,'0')}`;
-    if (screens.game.offsetParent !== null) updateScoreboard(players, inGameScoreboard);
+    if (screens.game.offsetParent !== null) {
+        const self = players.find(p => p.socketId === socket.id);
+        const rolesToShow = (self && self.isSpectator) ? currentRoundRoles : null;
+        updateScoreboard(players, inGameScoreboard, rolesToShow);
+    }
 });
 socket.on('startVote', ({ players, reason, voteTime }) => {
     showModal('voting');
     voteReason.textContent = reason;
     votePlayerButtons.innerHTML = '';
+    const self = players.find(p => p.socketId === socket.id);
+
     players.forEach(player => {
-        const button = document.createElement('button');
-        button.textContent = player.name;
-        button.className = 'btn btn-primary vote-btn w-full mb-2';
-        button.onclick = () => submitVote(player.id);
-        votePlayerButtons.appendChild(button);
+        if (player.socketId !== socket.id) { // Cannot vote for yourself
+            const button = document.createElement('button');
+            button.textContent = player.name;
+            button.className = 'btn btn-primary vote-btn w-full mb-2';
+            button.onclick = () => submitVote(player.id);
+            votePlayerButtons.appendChild(button);
+        }
     });
     abstainVoteBtn.disabled = false;
     let voteTimeLeft = voteTime || 120;
@@ -362,7 +372,7 @@ socket.on('spyGuessPhase', ({ locations, taunt, duration }) => {
 socket.on('spyIsGuessing', ({ spyName, taunt }) => {
     showModal('waitingForSpy');
     waitingSpyName.textContent = spyName;
-    waitingTaunt.textContent = taunt || "";
+    spyGuessTaunt.textContent = taunt || ""; // Use the same element for consistency
 });
 socket.on('bountyHuntPhase', ({ locations, targetName, duration }) => {
     showModal('bountyHunt');
@@ -405,11 +415,11 @@ socket.on('roundOver', ({ location, spyName, resultText, isFinalRound, players }
         backToLobbyBtn.classList.add('hidden');
     }
     roundResultText.textContent = resultMessage;
-    updateScoreboard(players, playerList);
+    // No need to call updateScoreboard here, it's just showing results
 });
 socket.on('returnToLobby', () => { showScreen('lobby'); showModal(null); localStorage.removeItem('lastRoomCode'); });
 socket.on('kicked', () => { alert('คุณถูกเตะออกจากห้อง'); localStorage.removeItem('lastRoomCode'); window.location.reload(); });
 socket.on('playerDisconnected', name => { lobbyMessage.textContent = `${name} หลุดออกจากเกม...`; });
-socket.on('playerTookOver', ({ newName, oldName }) => { lobbyMessage.textContent = `${newName} ได้เข้าร่วมแทน ${oldName}!`; });
+socket.on('playerReconnected', name => { lobbyMessage.textContent = `${name} กลับเข้าสู่เกม!`; });
 socket.on('newHost', name => { lobbyMessage.textContent = `${name} ได้เป็นหัวหน้าห้องคนใหม่`; });
 

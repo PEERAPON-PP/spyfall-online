@@ -13,9 +13,28 @@ const bountyHuntTimer = $('bounty-hunt-timer'), bountyLocationGuess = $('bounty-
 
 let isHost = false, voteTimerInterval = null, playerToken = null, specialTimerInterval = null;
 let currentRoundLocationsData = []; // Store full location data for the round
+let wakeLock = null; // Wake Lock object
 const socket = io();
 
 // --- Utility Functions ---
+// FIX: Function to prevent screen sleep
+const requestWakeLock = async () => {
+  if ('wakeLock' in navigator) {
+    try {
+      wakeLock = await navigator.wakeLock.request('screen');
+    } catch (err) {
+      console.error(`${err.name}, ${err.message}`);
+    }
+  }
+};
+
+const releaseWakeLock = async () => {
+  if (wakeLock !== null) {
+    await wakeLock.release();
+    wakeLock = null;
+  }
+};
+
 function showScreen(screenName) { Object.values(screens).forEach(s => s.classList.add('hidden')); screens[screenName].classList.remove('hidden'); }
 function showModal(modalName) { 
     if(specialTimerInterval) clearInterval(specialTimerInterval);
@@ -47,7 +66,6 @@ function updateScoreboard(players, container, allPlayerRoles = null) {
         else if (player.isSpectator) prefix = '🔎 '; // Spectator
         
         let statusText = '';
-        // FIX: เปลี่ยนข้อความสำหรับผู้ชมที่รอ
         if (player.isSpectator === 'waiting') {
             statusText = ' (ผู้ชม - รอจบเกม)';
         }
@@ -102,7 +120,6 @@ function updateScoreboard(players, container, allPlayerRoles = null) {
         }
         activePlayers.forEach(player => container.appendChild(createPlayerRow(player)));
     }
-    // FIX: ไม่ต้องแสดงผู้ชมในกระดานคะแนนระหว่างเกม
     if (spectators.length > 0 && container !== inGameScoreboard) {
         const s_divider = document.createElement('div');
         s_divider.className = 'text-center text-gray-500 text-sm py-1 font-semibold mt-2';
@@ -282,6 +299,7 @@ socket.on('settingsUpdated', (settings) => {
 });
 
 socket.on('gameStarted', (data) => {
+    requestWakeLock();
     showScreen('game');
     showModal(null);
     currentRoundLocationsData = data.allLocationsData || [];
@@ -298,25 +316,24 @@ socket.on('gameStarted', (data) => {
     roleDescDisplay.classList.add('hidden');
     spyTargetDisplay.classList.add('hidden');
     bountyHuntBtn.classList.add('hidden');
-    
-    // FIX: ปรับสีของสถานที่และบทบาท
-    locationDisplay.classList.remove('text-red-600', 'text-blue-600', 'font-bold');
-    roleDisplay.classList.remove('text-red-600', 'text-blue-600', 'font-bold');
 
     if (self && (self.isSpectator === true || self.isSpectator === 'waiting')) {
         locationDisplay.textContent = data.location;
+        // FIX: Set class for spectator view to bold and black
+        locationDisplay.className = 'text-2xl font-bold text-gray-800';
         roleLabel.textContent = "สถานะ:"
         roleDisplay.textContent = "คุณเป็นผู้ชม";
+        roleDisplay.className = 'text-lg font-bold text-gray-800';
         ingameActions.classList.add('hidden');
         updateScoreboard(data.players, inGameScoreboard, data.allPlayerRoles);
     } else {
         const isSpy = data.role === 'สายลับ';
         locationDisplay.textContent = data.location;
-        locationDisplay.classList.add(isSpy ? 'text-red-600' : 'text-blue-600', 'font-bold');
-
+        locationDisplay.className = `text-2xl font-bold ${isSpy ? 'text-red-600' : 'text-blue-600'}`;
+        
         roleLabel.textContent = "บทบาท:"
         roleDisplay.textContent = data.role;
-        roleDisplay.classList.add(isSpy ? 'text-red-600' : 'text-blue-600', 'font-bold');
+        roleDisplay.className = `text-lg font-bold ${isSpy ? 'text-red-600' : 'text-blue-600'}`;
         
         if (data.roleDesc) {
             roleDescDisplay.textContent = `"${data.roleDesc}"`;
@@ -419,6 +436,7 @@ socket.on('roundOver', ({ location, spyName, resultText, isFinalRound, players }
     const self = players.find(p => p.socketId === socket.id);
     
     if (isFinalRound) {
+        releaseWakeLock();
         endModalTitle.textContent = "จบเกม!";
         const winner = [...players].filter(p=>!p.isSpectator).sort((a,b) => b.score - a.score)[0];
         if(winner) resultMessage += `\n\n🏆 ผู้ชนะคือ ${winner.name} ด้วยคะแนน ${winner.score} คะแนน!`;
@@ -441,8 +459,18 @@ socket.on('roundOver', ({ location, spyName, resultText, isFinalRound, players }
     }
     updateScoreboard(players, playerList);
 });
-socket.on('returnToLobby', () => { showScreen('lobby'); showModal(null); localStorage.removeItem('lastRoomCode'); });
-socket.on('kicked', () => { alert('คุณถูกเตะออกจากห้อง'); localStorage.removeItem('lastRoomCode'); window.location.reload(); });
+socket.on('returnToLobby', () => { 
+    releaseWakeLock();
+    showScreen('lobby'); 
+    showModal(null); 
+    localStorage.removeItem('lastRoomCode'); 
+});
+socket.on('kicked', () => { 
+    releaseWakeLock();
+    alert('คุณถูกเตะออกจากห้อง'); 
+    localStorage.removeItem('lastRoomCode'); 
+    window.location.reload(); 
+});
 socket.on('playerDisconnected', name => { lobbyMessage.textContent = `${name} หลุดออกจากเกม...`; });
 socket.on('playerTookOver', ({ newName, oldName }) => { lobbyMessage.textContent = `${newName} ได้เข้าร่วมแทน ${oldName}!`; });
 socket.on('newHost', name => { lobbyMessage.textContent = `${name} ได้เป็นหัวหน้าห้องคนใหม่`; });

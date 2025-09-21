@@ -249,8 +249,15 @@ socket.on('updatePlayerList', ({players, settings}) => {
     if (isHost) {
         const activePlayers = players.filter(p => !p.disconnected && !p.isSpectator).length;
         startGameBtn.classList.remove('hidden');
-        startGameBtn.disabled = activePlayers < 1;
-        lobbyMessage.textContent = 'คุณคือหัวหน้าห้อง กดเริ่มเกมได้เลย!';
+        // --- START: MODIFICATION ---
+        const canStart = activePlayers >= 3;
+        startGameBtn.disabled = !canStart;
+        if (canStart) {
+            lobbyMessage.textContent = 'คุณคือหัวหน้าห้อง กดเริ่มเกมได้เลย!';
+        } else {
+            lobbyMessage.textContent = `ต้องมีผู้เล่นอย่างน้อย 3 คนในการเริ่มเกม (ปัจจุบัน ${activePlayers} คน)`;
+        }
+        // --- END: MODIFICATION ---
     } else {
         startGameBtn.classList.add('hidden');
         if (self && self.isSpectator) lobbyMessage.textContent = 'คุณอยู่ในโหมดผู้ชม รอหัวหน้าห้องเริ่มเกม';

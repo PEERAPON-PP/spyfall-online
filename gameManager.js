@@ -10,6 +10,8 @@ try {
         const fileContent = fs.readFileSync(filePath, 'utf8');
         allLocations = allLocations.concat(JSON.parse(fileContent));
     }
+    // เรียงลำดับสถานที่ทั้งหมดตามตัวอักษรไทย ก-ฮ ตั้งแต่แรก
+    allLocations.sort((a, b) => a.name.localeCompare(b.name, 'th'));
     console.log(`Loaded ${allLocations.length} locations from ${locationFiles.length} files.`);
 } catch (error) {
     console.error("Could not load location files:", error);
@@ -87,10 +89,13 @@ function startNewRound(roomCode, games, io) {
     game.revoteCandidates = [];
     game.spy = null;
     game.bountyTarget = null;
-    game.spyLocationList = []; // Reset the list for the new round
+    game.roundLocationList = []; // Reset the list for the new round
     
+    // FIX: เปลี่ยนสถานะผู้ชมที่รอเล่นให้เป็นผู้เล่นก่อนเริ่มรอบใหม่
     game.players.forEach(p => { 
-        if (p.isSpectator === 'waiting') p.isSpectator = false;
+        if (p.isSpectator === 'waiting') {
+            p.isSpectator = false;
+        }
         delete p.role;
     });
 
@@ -100,7 +105,6 @@ function startNewRound(roomCode, games, io) {
         return;
     }
     
-    // --- MODIFICATION: Removed redundant check for game.usedLocations ---
     let locationPool = availableLocations.filter(loc => !game.usedLocations.includes(loc.name));
     if (locationPool.length === 0) { game.usedLocations = []; locationPool = availableLocations; }
     
@@ -135,39 +139,29 @@ function startNewRound(roomCode, games, io) {
         return { id: p.id, role: name };
     });
     
-    // --- START: NEW SPY LIST BALANCE LOGIC ---
-    let spyListSize;
+    // FIX: สร้างรายชื่อสถานที่ชุดเดียวสำหรับทุกคน และเรียงลำดับ
+    let listSize;
     const selectedThemes = game.settings.themes;
     const themeCount = selectedThemes.length;
 
-    if (themeCount >= 3) {
-        spyListSize = 22;
-    } else if (themeCount === 2) {
-        spyListSize = 18;
-    } else if (themeCount === 1) {
-        if (selectedThemes.includes('default')) {
-            spyListSize = 16;
-        } else { // fairytale or crisis
-            spyListSize = 14;
-        }
-    } else { // Should not happen, but as a fallback
-        spyListSize = 20;
-    }
+    if (themeCount >= 3) listSize = 22;
+    else if (themeCount === 2) listSize = 18;
+    else if (themeCount === 1) listSize = selectedThemes.includes('default') ? 16 : 14;
+    else listSize = 20;
     
     const allThemeLocationNames = availableLocations.map(l => l.name);
-    if (spyListSize > allThemeLocationNames.length) {
-        spyListSize = allThemeLocationNames.length;
+    if (listSize > allThemeLocationNames.length) {
+        listSize = allThemeLocationNames.length;
     }
 
-    const sliceCount = spyListSize - 1;
+    const sliceCount = listSize - 1;
     let otherLocations = allThemeLocationNames.filter(name => name !== game.currentLocation);
     shuffleArray(otherLocations);
     
-    let spyList = otherLocations.slice(0, sliceCount);
-    spyList.push(game.currentLocation);
-    spyList.sort((a, b) => a.localeCompare('th')); // Sort alphabetically for Thai
-    game.spyLocationList = spyList; // Store the sorted list in the game state
-    // --- END: NEW SPY LIST BALANCE LOGIC ---
+    let roundList = otherLocations.slice(0, sliceCount);
+    roundList.push(game.currentLocation);
+    roundList.sort((a, b) => a.localeCompare(b, 'th')); // เรียง ก-ฮ
+    game.roundLocationList = roundList;
 
     game.players.forEach(player => {
         const socket = io.sockets.sockets.get(player.socketId);
@@ -185,7 +179,7 @@ function startNewRound(roomCode, games, io) {
                 payload.location = game.currentLocation;
                 payload.allPlayerRoles = allPlayerRoles;
                 payload.role = "ผู้ชม";
-                payload.allLocations = [];
+                payload.allLocations = []; // ผู้ชมไม่จำเป็นต้องเห็นลิสต์
             } else if (player.role) {
                 const { name: roleName, description: roleDesc } = parseRole(player.role);
                 const isSpy = roleName === 'สายลับ';
@@ -194,7 +188,8 @@ function startNewRound(roomCode, games, io) {
                 payload.roleDesc = roleDesc;
                 payload.location = isSpy ? 'ไม่ทราบ' : game.currentLocation;
                 
-                payload.allLocations = isSpy ? game.spyLocationList : allThemeLocationNames;
+                // FIX: ใช้รายชื่อสถานที่ชุดเดียวกันสำหรับทุกคน
+                payload.allLocations = game.roundLocationList;
 
                 if (isSpy && game.bountyTarget) {
                     payload.bountyTargetName = game.bountyTarget.name;
@@ -296,7 +291,7 @@ function initiateSpyEscape(roomCode, reason, games, io) {
     const taunt = TAUNTS[Math.floor(Math.random() * TAUNTS.length)];
     
     const spySocket = io.sockets.sockets.get(game.spy.socketId);
-    if(spySocket) spySocket.emit('spyGuessPhase', { locations: game.spyLocationList, taunt: `${reason} ${taunt}`, duration: 60 });
+    if(spySocket) spySocket.emit('spyGuessPhase', { locations: game.roundLocationList, taunt: `${reason} ${taunt}`, duration: 60 });
 
     game.players.forEach(p => {
         if (p.id !== game.spy.id) {
@@ -366,7 +361,7 @@ function initiateBountyHunt(roomCode, games, io) {
     
     if (spySocket) {
         spySocket.emit('bountyHuntPhase', {
-            locations: game.spyLocationList,
+            locations: game.roundLocationList,
             targetName: game.bountyTarget.name,
             duration: 60
         });
@@ -429,10 +424,11 @@ function sendGameStateToSpectator(game, player, io) {
     const socket = io.sockets.sockets.get(player.socketId);
     if (!socket) return;
 
-    const activePlayers = game.players.filter(p => !p.disconnected && !p.isSpectator);
+    const activePlayers = game.players.filter(p => !p.disconnected && p.isSpectator !== true && p.isSpectator !== 'waiting');
+    
     const allPlayerRoles = activePlayers.map(p => {
         const { name } = parseRole(p.role);
-        return { id: p.id, role: name };
+        return { id: p.id, name: p.name, role: name };
     });
 
     socket.emit('gameStarted', {
@@ -459,4 +455,3 @@ module.exports = {
     sendGameStateToSpectator,
     clearTimers
 };
-

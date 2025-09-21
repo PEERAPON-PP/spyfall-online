@@ -16,14 +16,42 @@ body { font-family: 'IBM Plex Sans Thai', sans-serif; touch-action: manipulation
 .vote-btn:disabled { background-color: #d1d5db; cursor: not-allowed; }
 .player-disconnected { opacity: 0.5; font-style: italic; }
 
+.theme-spy { --main-color: #ef4444; --hover-color: #dc2626; --text-color: #991b1b; }
+.theme-player { --main-color: #4f46e5; --hover-color: #4338ca; --text-color: #312e81; }
+
+.game-header { color: var(--main-color); }
 .timer-display { background-color: #e5e7eb; }
+.theme-spy .timer-display { background-color: #fee2e2; }
+.theme-player .timer-display { background-color: #e0e7ff; }
 
-/* Modal Styles */
-.modal-overlay { position: fixed; inset: 0; background-color: rgba(0, 0, 0, 0.5); display: flex; align-items: center; justify-content: center; padding: 1rem; z-index: 50; }
-.modal-card { width: 100%; max-width: 28rem; }
-.modal-spy { border: 3px solid #ef4444; }
-.modal-player { border: 3px solid #4f46e5; }
-.spectator-spy-role .font-semibold { color: #ef4444; }
-.role-spy { color: #ef4444; font-weight: 700; }
-.role-player { color: #3b82f6; font-weight: 700; }
+/* --- UI Color Theming for Modals & Text --- */
 
+/* Spy Theme (Red) */
+#spy-guess-modal .card, 
+#bounty-hunt-modal .card {
+    border: 2px solid #ef4444;
+}
+#spy-guess-modal h3, 
+#bounty-hunt-modal h3 {
+    color: #ef4444;
+}
+#end-spy {
+    color: #ef4444;
+    font-weight: 600;
+}
+
+/* Player Theme (Blue) */
+#voting-modal .card, 
+#waiting-for-spy-modal .card,
+#waiting-for-bounty-modal .card {
+     border: 2px solid #4f46e5;
+}
+#voting-modal h3, 
+#waiting-for-spy-modal h3,
+#waiting-for-bounty-modal h3 {
+    color: #4f46e5;
+}
+#end-location {
+    color: #4f46e5;
+    font-weight: 600;
+}

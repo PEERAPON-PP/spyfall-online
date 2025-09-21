@@ -129,7 +129,7 @@ async function startNewRound(roomCode, games, io) {
     game.players.forEach(player => {
         const socket = io.sockets.sockets.get(player.socketId);
         if (socket) {
-            const payload = { round: game.currentRound, totalRounds: game.settings.rounds, players: game.players, isSpectator: player.isSpectator, allPlayerRoles, allLocations: game.spyLocationList, allLocationsData: allThemeLocations, canBountyHunt: game.settings.bountyHuntEnabled };
+            const payload = { round: game.currentRound, totalRounds: game.settings.rounds, players: game.players, isSpectator: player.isSpectator, allPlayerRoles, allLocations: game.spyLocationList, allLocationsData: allThemeLocations, canBountyHunt: game.settings.bountyHuntEnabled && !!game.bountyTarget };
             if (player.isSpectator) { payload.location = game.currentLocation; payload.role = "ผู้ชม"; }
             else if (player.role) { const { name: roleName, description: roleDesc } = parseRole(player.role); payload.role = roleName; payload.roleDesc = roleDesc; payload.location = roleName === 'สายลับ' ? 'ไม่ทราบ' : game.currentLocation; if(roleName === 'สายลับ' && game.bountyTarget) payload.bountyTargetName = game.bountyTarget.name; }
             else return;
@@ -193,10 +193,15 @@ function initiateSpyEscape(roomCode, reason, games, io) {
     if (!game || !game.spy) return endGamePhase(roomCode, "เกิดข้อผิดพลาด: ไม่พบสายลับ", games, io);
     game.spy.score++;
     game.state = 'spy-guessing';
+    const duration = 60;
+    game.specialTimeLeft = duration;
+
     const spySocket = io.sockets.sockets.get(game.spy.socketId);
-    if(spySocket) spySocket.emit('spyGuessPhase', { locations: game.spyLocationList, taunt: `${reason} ${TAUNTS[Math.floor(Math.random() * TAUNTS.length)]}`, duration: 60 });
+    if(spySocket) spySocket.emit('spyGuessPhase', { locations: game.spyLocationList, taunt: `${reason} ${TAUNTS[Math.floor(Math.random() * TAUNTS.length)]}`, duration: duration });
     game.players.forEach(p => { if (p.id !== game.spy.id && !p.isBot) { const socket = io.sockets.sockets.get(p.socketId); if(socket) socket.emit('spyIsGuessing', { spyName: game.spy.name }); }});
-    game.specialTimer = setTimeout(() => { if(games[roomCode]?.state === 'spy-guessing') spyGuessLocation(roomCode, game.spy.socketId, null, games, io); }, 60 * 1000);
+    
+    clearTimers(game);
+    game.specialTimer = setTimeout(() => specialTimerLoop(roomCode, games, io), 1000);
 }
 
 function endGamePhase(roomCode, resultText, games, io) {
@@ -211,7 +216,13 @@ function spyGuessLocation(roomCode, socketId, guessedLocation, games, io) {
     const game = games[roomCode];
     if (!game || game.state !== 'spy-guessing' || !game.spy || socketId !== game.spy.socketId) return;
     clearTimers(game);
-    let resultText = guessedLocation === game.currentLocation ? (game.spy.score++, `สายลับหนีรอด และตอบสถานที่ถูกต้อง!\nสายลับได้รับเพิ่มอีก 1 คะแนน! (รวมเป็น 2)`) : `สายลับหนีรอด! แต่ตอบสถานที่ผิด\nสายลับได้รับ 1 คะแนน`;
+    let resultText;
+    if (guessedLocation === game.currentLocation) {
+        game.spy.score++; // The spy already got 1 point for escaping. This is the bonus point.
+        resultText = `สายลับหนีรอด และตอบสถานที่ถูกต้อง!\nสายลับได้รับเพิ่มอีก 1 คะแนน! (รวมเป็น 2)`;
+    } else {
+        resultText = `สายลับหนีรอด! แต่ตอบสถานที่ผิด\nสายลับได้รับ 1 คะแนน`;
+    }
     endGamePhase(roomCode, resultText, games, io);
 }
 
@@ -222,6 +233,7 @@ function initiateBountyHunt(roomCode, games, io) {
     clearTimers(game);
     game.state = 'bounty-hunting';
     const duration = 60;
+    game.specialTimeLeft = duration;
 
     const spySocket = io.sockets.sockets.get(game.spy.socketId);
     if (spySocket) {
@@ -238,11 +250,7 @@ function initiateBountyHunt(roomCode, games, io) {
         }
     });
 
-    game.specialTimer = setTimeout(() => {
-        if (games[roomCode]?.state === 'bounty-hunting') {
-            resolveBountyHunt(roomCode, { location: null, role: null }, games, io);
-        }
-    }, duration * 1000);
+    game.specialTimer = setTimeout(() => specialTimerLoop(roomCode, games, io), 1000);
 }
 
 function resolveBountyHunt(roomCode, guess, games, io) {
@@ -267,6 +275,27 @@ function resolveBountyHunt(roomCode, guess, games, io) {
         resultText = `ล่าค่าหัวล้มเหลว!\n${game.spy.name} ทายผิดพลาด\n- ทายสถานที่: ${isLocationCorrect ? 'ถูกต้อง' : 'ผิด'}\n- ทายบทบาท: ${isRoleCorrect ? 'ถูกต้อง' : 'ผิด'}\nผู้เล่นทุกคน (ยกเว้นสายลับ) ได้รับ 2 คะแนน!`;
     }
     endGamePhase(roomCode, resultText, games, io);
+}
+
+function specialTimerLoop(roomCode, games, io) {
+    const game = games[roomCode];
+    if (!game || (game.state !== 'spy-guessing' && game.state !== 'bounty-hunting')) {
+        clearTimers(game);
+        return;
+    }
+
+    game.specialTimeLeft--;
+    io.to(roomCode).emit('specialTimerUpdate', { timeLeft: Math.max(0, game.specialTimeLeft) });
+
+    if (game.specialTimeLeft <= 0) {
+        if (game.state === 'spy-guessing') {
+            spyGuessLocation(roomCode, game.spy.socketId, null, games, io);
+        } else if (game.state === 'bounty-hunting') {
+            resolveBountyHunt(roomCode, { location: null, role: null }, games, io);
+        }
+    } else {
+        game.specialTimer = setTimeout(() => specialTimerLoop(roomCode, games, io), 1000);
+    }
 }
 
 

@@ -7,13 +7,18 @@ const initializeSocketHandlers = require('./socketHandlers');
 const app = express();
 const server = http.createServer(app);
 const io = socketIo(server, {
-    // FIX: เพิ่ม pingTimeout และ pingInterval เพื่อรักษาการเชื่อมต่อให้นานขึ้น
-    pingTimeout: 300000, // 5 นาที
-    pingInterval: 25000   // 25 วินาที
+    pingInterval: 25000,
+    pingTimeout: 60000,
 });
 
 // บอกให้ Express เสิร์ฟไฟล์จากโฟลเดอร์ 'public'
 app.use(express.static('public'));
+
+// --- BUG FIX: Keep-Alive Endpoint ---
+// เพิ่ม Endpoint นี้เพื่อให้ Client สามารถส่ง Request มาเพื่อป้องกันไม่ให้ Server "หลับ"
+app.get('/keep-alive', (req, res) => {
+    res.status(200).send('Server is awake.');
+});
 
 // --- เริ่มต้นการจัดการ Socket.IO ---
 initializeSocketHandlers(io);

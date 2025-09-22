@@ -15,6 +15,20 @@ let isHost = false, voteTimerInterval = null, playerToken = null, specialTimerIn
 let currentRoundLocationsData = []; // Store full location data for the round
 const socket = io();
 
+// --- BUG FIX: Keep-Alive Function ---
+// ฟังก์ชันนี้จะส่ง Request ไปที่ Server ทุกๆ 5 นาที (300,000 ms)
+// เพื่อป้องกันไม่ให้แพลตฟอร์มโฮสติ้งสั่งให้ Server หยุดทำงาน
+setInterval(() => {
+    fetch('/keep-alive').then(res => {
+        if (res.ok) {
+            console.log('Keep-alive ping sent successfully.');
+        } else {
+            console.error('Keep-alive ping failed.');
+        }
+    }).catch(err => console.error('Error sending keep-alive ping:', err));
+}, 300000); 
+
+
 // --- Wake Lock ---
 async function requestWakeLock() {
     if ('wakeLock' in navigator) {
@@ -341,6 +355,7 @@ socket.on('gameStarted', (data) => {
         updateScoreboard(data.players.filter(p => !p.isSpectator), inGameScoreboard);
         if (data.allLocations) { 
             locationsList.innerHTML = '';
+            data.allLocations.sort((a, b) => a.localeCompare(b, 'th')); // เรียง ก-ฮ
             data.allLocations.forEach(locName => {
                 const div = document.createElement('div');
                 div.textContent = locName;
@@ -393,7 +408,7 @@ socket.on('spyGuessPhase', ({ locations, taunt, duration }) => {
 socket.on('spyIsGuessing', ({ spyName, taunt }) => {
     showModal('waitingForSpy');
     waitingSpyName.textContent = spyName;
-    spyGuessTaunt.textContent = taunt || "";
+    spyGuessTaunt.textContent = taunt ? `<span class="text-red-500 font-bold">${taunt}</span>` : "";
 });
 socket.on('bountyHuntPhase', ({ locations, targetName, duration }) => {
     showModal('bountyHunt');
@@ -419,7 +434,13 @@ socket.on('roundOver', ({ location, spyName, resultText, isFinalRound, players }
     showModal('endRound'); 
     nextRoundCountdown.classList.add('hidden'); // Hide countdown initially
     endLocation.textContent = location; 
-    endSpy.textContent = spyName;
+    
+    // Check if spy action is in the result text
+    const spyActionKeywords = ['สายลับหนีรอด', 'สายลับทาย', 'การล่าค่าหัว'];
+    const isSpyAction = spyActionKeywords.some(keyword => resultText.includes(keyword));
+    
+    endSpy.innerHTML = isSpyAction ? `<span class="text-red-600 font-bold">${spyName}</span>` : spyName;
+
     let resultMessage = resultText;
     const self = players.find(p => p.socketId === socket.id);
     
